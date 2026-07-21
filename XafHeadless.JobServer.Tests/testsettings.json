@@ -1,0 +1,12 @@
+{
+  "Api": { "BaseUrl": "http://localhost:5200" },
+  "JobServer": { "BaseUrl": "http://localhost:5300" },
+  "Smtp4dev": { "BaseUrl": "http://localhost:5312" },
+  "Test": {
+    "AdminUser": "Admin@company1.com", "AdminPassword": "",
+    "RestrictedUser": "restricted@company1.com", "RestrictedPassword": ""
+  },
+  "ConnectionStrings": {
+    "Host": "Integrated Security=SSPI;Pooling=true;MultipleActiveResultSets=true;Data Source=(localdb)\\mssqllocaldb;Initial Catalog=XafHeadlessDemo"
+  }
+}

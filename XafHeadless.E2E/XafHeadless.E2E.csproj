@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- MSTest 3.6.4 (NOT the 4.x metapackage) is the version Microsoft.Playwright.MSTest is verified
+       against; pairing it with 4.x risks the "dotnet test finds 0 tests" discovery quirk called out
+       in the task brief. All four packages below are already in the local NuGet cache. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.6.4" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.6.4" />
+    <PackageReference Include="Microsoft.Playwright.MSTest" Version="1.60.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="testsettings.json" CopyToOutputDirectory="Always" />
+    <None Update="testsettings.Development.json" CopyToOutputDirectory="Always" Condition="Exists('testsettings.Development.json')" />
+  </ItemGroup>
+
+</Project>

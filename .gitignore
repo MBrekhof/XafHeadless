@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+
+# Rider / VS
+.vs/
+.idea/
+
+# Playwright E2E artifacts
+TestResults/
+playwright-report/
+.playwright/
+
+# Local secrets (NEVER commit) — connection strings, JWT keys, test credentials
+appsettings.Development.json
+testsettings.Development.json
+
+# Local run/tooling artifacts
+publish/
+.playwright-mcp/
+excalidraw.log

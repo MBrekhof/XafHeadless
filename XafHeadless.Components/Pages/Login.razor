@@ -1,0 +1,65 @@
+@page "/login"
+@implements IDisposable
+@inject ApiClient Api
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+
+<PageTitle>Login</PageTitle>
+
+@* UI-001: centered login card (was a bare form pinned top-left). *@
+<div class="xaf-login">
+    <div class="xaf-login-card">
+        <h1 class="h3 mb-4 text-center">XafHeadless</h1>
+        <div class="mb-3">
+            <DxTextBox @bind-Text="@userName" NullText="User name" CssClass="w-100" />
+        </div>
+        <div class="mb-3">
+            <DxTextBox @bind-Text="@password" Password="true" NullText="Password" CssClass="w-100" />
+        </div>
+        <DxButton Text="Login" Click="@OnLoginClick" Enabled="@(!busy)" CssClass="w-100" />
+        @if (error is not null) {
+            <p class="text-danger mt-3 mb-0 text-center">@error</p>
+        }
+    </div>
+</div>
+
+@code {
+    string userName = "";
+    string password = "";
+    string? error;
+    bool busy;
+
+    // GAP-007: if the JWT is (or becomes) present -- e.g. restored from sessionStorage on the first
+    // interactive render after the WASM takeover lands here -- skip the form and go to the first
+    // projected nav item, mirroring Home. Deferred like Home: a null token during prerender/pre-restore
+    // does nothing.
+    protected override void OnInitialized() {
+        AuthState.Changed += RedirectIfAuthenticated;
+        RedirectIfAuthenticated();
+    }
+
+    void RedirectIfAuthenticated() {
+        if (AuthState.Token is not null) InvokeAsync(NavigateToFirstItemAsync);
+    }
+
+    // GAP-004: model-driven landing, replacing the old hardcoded /list/Order_ListView. Falls back to
+    // /login (a no-op here, already on it) if the projected menu is empty.
+    async Task NavigateToFirstItemAsync() {
+        var items = await Api.GetNavigationAsync();
+        Navigation.NavigateTo(items.Count > 0 ? $"/list/{items[0].ViewId}" : "/login");
+    }
+
+    public void Dispose() => AuthState.Changed -= RedirectIfAuthenticated;
+
+    async Task OnLoginClick() {
+        busy = true;
+        error = null;
+        var token = await Api.LoginAsync(userName, password);
+        busy = false;
+        if (token is null) {
+            error = "Login failed.";
+            return;
+        }
+        await NavigateToFirstItemAsync();
+    }
+}

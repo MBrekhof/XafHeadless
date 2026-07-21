@@ -1,0 +1,309 @@
+@* Metadata-driven grid with HYBRID binding (GRID-001, Tasks 4.2 + 4.3). A $count=true&$top=0 probe routes:
+   count <= RowCap  -> in-memory: DxGrid grouping/sorting/filtering/paging + column chooser all client-side
+                       over a capped load (unchanged small-view path).
+   count >  RowCap  -> server mode: DxGrid pulls pages on demand through ODataGridDataSource
+                       ($top/$skip/$orderby; filter row -> ODataFilterTranslator -> $filter, scalar columns
+                       only). The pager is TRUE paging over the full set. Grouping is served SERVER-side
+                       (Task 4.3): each grouping level is one $apply=groupby((path),aggregate($count as
+                       Count)) fetch through GetGroupInfoAsync; expanding a group pages its children via
+                       the ordinary GetItemsAsync path (the grid bakes the group criteria into the filter).
+                       Only GridBinding.IsServerGroupable columns may group (AllowGroup below).
+   Either way the server applies the security trim, the master-detail filter, and the default order.
+   Task 9/10 reuse this unchanged for the top-level list and the nested master-detail tab.
+   Three render states: loading / error (metadata or data load failed) / loaded. *@
+@inject ApiClient Api
+@inject AuthState AuthState
+@using System.Dynamic
+@using System.Text.Json
+@using DevExpress.Data.Filtering
+
+@if (loading) {
+    <em>Loading…</em>
+} else if (error is not null) {
+    <p style="color:red">@error</p>
+} else if (rows is null && serverData is null) {
+    <em>View has no columns.</em>
+} else {
+    @* DxGrid binds either the in-memory rows or the GridCustomDataSource-based ODataGridDataSource
+       (dxdocs DevExpress.Blazor.GridCustomDataSource, 26.1: the documented remote/on-demand binding,
+       WASM-compatible). ContextMenus=Header is the column-header sub-menu; its grouping commands
+       auto-hide per column when AllowGroup is false (verified 26.1 source:
+       GridDataColumnContextMenuItemsFactory gates them on GridRenderHelper.GetAllowGroup). *@
+    <DxGrid Data="@GridData" KeyFieldName="@keyField"
+            PageSize="25" AllowSort="true" ShowFilterRow="true" AllowSelectRowByClick="true"
+            ShowGroupPanel="true" ContextMenus="GridContextMenus.Header"
+            SelectionMode="GridSelectionMode.Single"
+            ColumnResizeMode="GridColumnResizeMode.NextColumn"
+            LayoutAutoSaving="@OnLayoutAutoSaving" LayoutAutoLoading="@OnLayoutAutoLoading"
+            CustomizeElement="@OnCustomizeElement"
+            SelectedDataItemChanged="@OnRowClick">
+        <Columns>
+            @foreach (var c in GridBinding.VisibleColumns(meta!.Columns!)) {
+                @* In-memory mode (GRID-003): EVERY column gets a filter-row editor -- enum captions and
+                   lookup display strings filter as text client-side -- and every column may group.
+                   Server mode: only scalar columns filter (their input translates to a correct $filter);
+                   enum/lookup cells get a disabled placeholder with a tooltip; only IsServerGroupable
+                   columns may group -- AllowGroup=false hides both the panel drag and the header-menu
+                   grouping commands (GridBinding.BuildCriteriaPathMap/BuildGroupPathMap enforce the same
+                   ceilings on the wire, so UI and wire can't drift apart).
+                   GRID-004 (companion-headless backport): DATE columns get an explicit DxDateEdit filter cell
+                   in BOTH modes (FilterCellFor) -- the metadata declares the type, so the editor never
+                   depends on DxGrid's value-type sniffing, which typed string-materialized date cells
+                   as text and produced the server-rejected string $filter that killed the circuit. *@
+                <DxGridDataColumn FieldName="@GridBinding.FieldFor(c)" Caption="@c.Caption"
+                                  AllowGroup="@(serverData is null ? default(bool?) : GridBinding.IsServerGroupable(c))"
+                                  FilterRowCellTemplate="@FilterCellFor(c)" />
+            }
+        </Columns>
+        <GroupSummary>
+            @* Per-group row count in the group header. In-memory: DxGrid counts client-side. Server
+               mode: served from the SAME $apply bucket count (ODataGridDataSource.GetGroupInfoAsync
+               fills GroupInfo.SummaryValues), so the displayed count is the true server-side total. *@
+            <DxGridSummaryItem SummaryType="GridSummaryItemType.Count" />
+        </GroupSummary>
+    </DxGrid>
+}
+
+@code {
+    [Parameter] public string ViewId { get; set; } = "";
+    [Parameter] public string? MasterKeyMember { get; set; }
+    [Parameter] public string? MasterKey { get; set; }
+    [Parameter] public string? MasterKeyName { get; set; }   // master type's own key member (e.g. "ID")
+    [Parameter] public EventCallback<string> OnRowSelected { get; set; }
+
+    // GRID-001: RowCap bounds the in-memory load so a large view (Order = 55k rows) can't hang the browser.
+    // Client-side grouping needs all rows in memory; we load at most this many and flag truncation in the UI.
+    // Nested tabs are filtered to a single master, so the cap only ever bites the big top-level lists.
+    const int RowCap = 5000;
+
+    ViewMetadata? meta;
+    // Backport (companion-headless BOOT-001 E2E finding, commit 520acd8): OnParametersSetAsync overlap guard.
+    // Navigating between two /list/{ViewId} routes reuses this component instance; if the user navigates
+    // away while a slow data fetch is still in flight (e.g. land on a big view post-login, click another
+    // nav item before that load finishes), the STALE load used to complete last and assign its rows under
+    // the NEW view's columns -- DxGrid then threw "property 'ObjectClass' is not found in the object of
+    // type ExpandoObject" and the whole Blazor Server circuit terminated. Every await below re-checks the
+    // sequence and discards superseded results.
+    int loadSeq;
+    // Bound as List<ExpandoObject> (the CONCRETE type), not List<IDictionary<...>>: DxGrid picks its
+    // field-access strategy from the collection's element type -- ExpandoObject -> dictionary access
+    // (works), IDictionary -> reflection (throws "property 'X' not found" on the dynamic members). The old
+    // GridCustomDataSource declared DataItemType = typeof(ExpandoObject) for the same reason.
+    List<ExpandoObject>? rows;
+    // Task 4.2 (GRID-001): non-null = server mode (count probe exceeded RowCap). Exactly one of
+    // rows/serverData is set after a successful load. serverGroupableFields (Task 4.3) is set
+    // alongside it: the grid FieldNames whose columns may group server-side (layout sanitizing).
+    ODataGridDataSource? serverData;
+    HashSet<string>? serverGroupableFields;
+    object? GridData => (object?)serverData ?? rows;
+    long totalRows;
+    AppearanceEvaluator? appearance;   // GAP-002: null when the view has no color/style rules (no per-row cost)
+    string? keyField;
+    string? loadedViewId;
+    bool loading = true;
+    string? error;
+
+    protected override async Task OnParametersSetAsync() {
+        var seq = ++loadSeq;   // supersedes any load still awaiting below
+        error = null;
+        rows = null;
+        serverData = null;
+        serverGroupableFields = null;
+
+        // Metadata refetch guard (Task 10 reuses this component for a nested tab where MasterKey
+        // changes on every master row selection but ViewId does not) -- only the network fetch of
+        // ViewMetadata is skipped; the data below is still reloaded every call to pick up a new MasterKey.
+        if (meta is null || ViewId != loadedViewId) {
+            loading = true;
+            try {
+                var fetched = await Api.GetViewAsync(ViewId)
+                    ?? throw new InvalidOperationException($"metadata request for '{ViewId}' failed");
+                if (seq != loadSeq) return;   // superseded while fetching -- discard
+                meta = fetched;
+                loadedViewId = ViewId;
+            } catch (Exception ex) {
+                if (seq != loadSeq) return;
+                error = $"Failed to load view metadata: {ex.Message}";
+                return;
+            } finally {
+                if (seq == loadSeq) loading = false;
+            }
+        }
+
+        if (meta.Columns is not { Count: > 0 } columns) return;
+
+        var filter = GridBinding.BuildMasterFilter(columns, MasterKeyMember, MasterKey, MasterKeyName);
+        var expand = GridBinding.BuildExpand(columns);
+        var defaultOrder = GridBinding.BuildDefaultOrder(columns);
+        keyField = meta.KeyMember;   // PH2-001: server-projected key, no client-side guessing
+
+        // GAP-002: build the appearance evaluator once per view; null it out when there are no rules so
+        // CustomizeElement short-circuits. ReferencedMembers are carried into each row (MaterializeRow)
+        // so criteria over non-column members (e.g. Rating) can evaluate.
+        var evaluator = new AppearanceEvaluator(meta.Appearance, columns, meta.AppearanceEnums);
+        appearance = evaluator.HasRules ? evaluator : null;
+        var appearanceMembers = appearance?.ReferencedMembers.ToList();
+
+        // GRID-002 hybrid routing (backported from the companion headless implementation's GRID-001): the total row count decides
+        // the binding (Order=55k routes server-side here).
+        //  - count <= RowCap: the capped client-side load, unchanged -- fetch up to RowCap rows ONCE
+        //    and let DxGrid group/sort/filter/page them in the browser.
+        //  - count >  RowCap: server mode -- ODataGridDataSource pulls each 25-row page on demand
+        //    ($top/$skip/$orderby; filter row -> $filter via ODataFilterTranslator, scalar-only maps).
+        // GRID-004 (companion-headless backport): TOP-LEVEL views learn the count from a cheap
+        // $count=true&$top=0 probe BEFORE fetching data -- they can be huge, and a discarded
+        // RowCap-row fetch per navigation would be real waste. NESTED tabs (master-filtered,
+        // near-always small) skip the probe and fold the count into the single data fetch (every
+        // response carries @odata.count) -- one request per master-row click instead of two; a
+        // pathologically large child collection still routes to server mode, discarding the
+        // up-to-RowCap rows it fetched to find that out -- the accepted cost of the fold.
+        void BindServerMode() {
+            serverGroupableFields = GridBinding.BuildGroupPathMap(columns).Keys.ToHashSet();
+            serverData = new ODataGridDataSource(Api, meta.ObjectType, filter, expand, defaultOrder,
+                GridBinding.BuildOrderPathMap(columns), GridBinding.BuildCriteriaPathMap(columns),
+                GridBinding.BuildGroupPathMap(columns), columns, keyField, appearanceMembers);
+            // loadSeq note (Task 1.5 guard): every await THIS method owns is covered above/below.
+            // Page fetches from here on are DxGrid-driven inside ODataGridDataSource; a superseding
+            // navigation nulls/replaces serverData, and DxGrid re-queries the NEW instance and
+            // cancels the old one's in-flight loads via the CancellationToken it passes -- a stale
+            // page can't be committed under the new view's columns.
+        }
+        try {
+            var nested = MasterKeyMember is not null && MasterKey is not null;
+            if (!nested) {
+                var probe = await Api.GetPageAsync(meta.ObjectType, new ODataQuery(0, 0, null, filter, null, null));
+                if (seq != loadSeq) return;   // superseded while probing the count
+                totalRows = probe.Total;
+                if (GridBinding.UseServerMode(totalRows, RowCap)) { BindServerMode(); return; }
+            }
+            var page = await Api.GetPageAsync(meta.ObjectType,
+                new ODataQuery(0, RowCap, defaultOrder, filter, null, expand));
+            if (seq != loadSeq) return;   // superseded while fetching -- rows would mismatch the new columns
+            totalRows = page.Total;
+            if (nested && GridBinding.UseServerMode(totalRows, RowCap)) { BindServerMode(); return; }
+            rows = page.Rows.Select(r => (ExpandoObject)GridBinding.MaterializeRow(r, columns, keyField, appearanceMembers)).ToList();
+        } catch (Exception ex) {
+            if (seq == loadSeq) error = $"Failed to load data: {ex.Message}";
+        }
+    }
+
+    // (Task 4.3: the Task-4.2 OnCustomizeContextMenu handler that stripped ALL grouping commands in
+    // server mode is gone -- grouping is served server-side now, and per-column AllowGroup already
+    // hides the grouping commands for the columns that can't.)
+
+    // Filter-row cell routing (GRID-004): date columns always get the explicit date editor;
+    // enum/lookup (and dateonly) columns are disabled in server mode only (in-memory they filter as
+    // text over captions/display strings); everything else keeps DxGrid's built-in editor.
+    RenderFragment<GridDataColumnFilterRowCellTemplateContext>? FilterCellFor(ColumnMetadata c) =>
+        c.DataType == "date" ? dateFilterCell
+        : serverData is not null && !GridBinding.IsServerFilterable(c) ? disabledFilterCell
+        : null;
+
+    // Server-mode filter-row placeholder for enum/lookup columns (scalar-only ceiling). The wrapper
+    // div carries the tooltip -- browsers don't reliably show a disabled input's own title.
+    readonly RenderFragment<GridDataColumnFilterRowCellTemplateContext> disabledFilterCell = _ =>
+        @<div title="Filtering on this column needs server support — planned as a follow-up.">
+            <input class="form-control" disabled />
+        </div>;
+
+    // GRID-004 (companion-headless backport): the date-column filter cell ("date" = DateTime members only;
+    // "dateonly" is excluded, see GridBinding.IsServerFilterable). Rendered from the metadata-declared
+    // type (never DxGrid's value-type sniff, see GridBinding.BuildDayRangeCriteria remarks);
+    // committing a date sets the column's FilterCriteria to the rounded [day, next-day) range -- the
+    // same criteria shape the built-in filter row produces for real DateTime columns -- through the
+    // context's documented FilterCriteria setter (routes into the grid's normal filter pipeline).
+    // Clearing resets to null. Assigned ONCE in OnInitialized (a stable delegate, like
+    // disabledFilterCell) rather than a field initializer: the DateChanged EventCallback bind compiles
+    // to EventCallback.Factory.Create(this, ...), and `this` is unusable in field initializers (a
+    // get-only property here would hand DxGridDataColumn a fresh delegate every render).
+    RenderFragment<GridDataColumnFilterRowCellTemplateContext>? dateFilterCell;
+
+    protected override void OnInitialized() => dateFilterCell = ctx =>
+        @<div class="xaf-date-filter" data-field="@ctx.DataColumn.FieldName">
+            <DxDateEdit T="DateTime?" Date="@GridBinding.ExtractDayFromCriteria(ctx.FilterCriteria)"
+                        DateChanged="@((DateTime? d) => ctx.FilterCriteria = GridBinding.BuildDayRangeCriteria(ctx.DataColumn.FieldName, d))"
+                        ClearButtonDisplayMode="DataEditorClearButtonDisplayMode.Auto" />
+        </div>;
+
+    // GAP-002: apply projected conditional-appearance colors/styles per data cell. VERIFIED DxGrid 26.1 API
+    // (dxdocs DxGrid.CustomizeElement): GridElementType.DataCell; e.Column as DxGridDataColumn -> FieldName;
+    // e.Grid.GetDataItem(VisibleIndex) is the bound ExpandoObject row; e.Style is the inline style (no CSP
+    // configured on this app, so Style is safe -- CssClass can't carry arbitrary per-rule colors). Cell-level
+    // (not row-level) so FontColor lands directly on the <td>; a "*" (whole-row) rule applies to every cell.
+    void OnCustomizeElement(GridCustomizeElementEventArgs e) {
+        if (appearance is null || e.ElementType != GridElementType.DataCell) return;
+        if (e.Grid.GetDataItem(e.VisibleIndex) is not IDictionary<string, object?> row) return;
+        var applied = appearance.Evaluate(row);
+        if (applied.Count == 0) return;
+        var css = BuildCellStyle(applied, (e.Column as DxGridDataColumn)?.FieldName);
+        if (css is not null) e.Style = css;
+    }
+
+    static string? BuildCellStyle(IReadOnlyList<AppliedAppearance> applied, string? field) {
+        string? color = null, background = null;
+        bool bold = false, italic = false;
+        var decoration = new HashSet<string>();
+        foreach (var a in applied) {
+            if (!a.WholeRow && (field is null || !a.TargetItems.Contains(field))) continue;
+            if (a.FontColor is not null) color = a.FontColor;
+            if (a.BackColor is not null) background = a.BackColor;
+            foreach (var token in (a.FontStyle ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                switch (token) {
+                    case "Bold": bold = true; break;
+                    case "Italic": italic = true; break;
+                    case "Underline": decoration.Add("underline"); break;
+                    case "Strikeout": decoration.Add("line-through"); break;
+                }
+        }
+        var parts = new List<string>();
+        if (color is not null) parts.Add($"color:{color}");
+        if (background is not null) parts.Add($"background-color:{background}");
+        if (bold) parts.Add("font-weight:bold");
+        if (italic) parts.Add("font-style:italic");
+        if (decoration.Count > 0) parts.Add($"text-decoration:{string.Join(' ', decoration)}");
+        return parts.Count == 0 ? null : string.Join(';', parts);
+    }
+
+    Task OnRowClick(object item) {
+        var key = GridBinding.ExtractRowKey((IDictionary<string, object?>)item, keyField);
+        return key is null ? Task.CompletedTask : OnRowSelected.InvokeAsync(key);
+    }
+
+    // GAP-008: per-user column-layout persistence, wired for Order_ListView ONLY (the proof view). This
+    // component is reused for every list + nested tab; other views render with resize enabled but do NOT
+    // persist -- expected for this proof. Gated on AuthState.Token so a pre-auth fetch never 401s
+    // (GAP-007 auth-timing). VERIFIED APIs (dxdocs, DevExpress.Blazor 26.1): DxGrid.LayoutAutoSaving /
+    // LayoutAutoLoading events + GridPersistentLayout (Columns carry VisibleIndex=order and Width, plus
+    // GroupIndex so a user's grouping now persists too); SaveLayout()/LoadLayout() are the on-demand
+    // equivalents. GridPersistentLayout round-trips via System.Text.Json.
+    const string PersistViewId = "Order_ListView";
+    bool ShouldPersist => ViewId == PersistViewId && AuthState.Token is not null;
+
+    async Task OnLayoutAutoSaving(GridPersistentLayoutEventArgs e) {
+        if (!ShouldPersist) return;
+        // Scope = column layout (order + width + grouping). Strip SearchText + FilterCriteria before
+        // persisting: FilterCriteria is a CriteriaOperator (unsafe to round-trip via System.Text.Json) and a
+        // stuck filter across reloads is undesirable -- the documented "prevent saving a setting" pattern.
+        var layout = e.Layout with { SearchText = null, FilterCriteria = null };
+        // Task 4.3: server mode groups server-side now, but only IsServerGroupable columns --
+        // defensive/symmetric with OnLayoutAutoLoading below (AllowGroup already stops the grid from
+        // grouping anything else, so this guards a future regression, not an observed bug).
+        if (serverData is not null)
+            layout = GridBinding.SanitizeLayoutForServerMode(layout, serverGroupableFields!);
+        await Api.SavePrefsAsync(ViewId, JsonSerializer.Serialize(layout));
+    }
+
+    async Task OnLayoutAutoLoading(GridPersistentLayoutEventArgs e) {
+        if (!ShouldPersist) return;
+        var json = await Api.GetPrefsAsync(ViewId);
+        if (string.IsNullOrEmpty(json)) return;
+        var layout = JsonSerializer.Deserialize<GridPersistentLayout>(json);
+        if (layout is null) return;
+        // Task 4.3 (reworked Task-4.2 review fix): a layout saved under different grouping rules may
+        // carry GroupIndex on columns server mode can't group (enums/dates) -- strip only those;
+        // grouping on server-groupable columns is honest now ($apply=groupby) and persists.
+        if (serverData is not null)
+            layout = GridBinding.SanitizeLayoutForServerMode(layout, serverGroupableFields!);
+        e.Layout = layout;
+    }
+}

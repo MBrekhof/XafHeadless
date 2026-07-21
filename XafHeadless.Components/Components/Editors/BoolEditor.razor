@@ -1,0 +1,10 @@
+@inherits EditorComponentBase
+
+@* Nullable bool -> tri-state checkbox. Enabled=false is the read-only presentation for a checkbox. *@
+<DxCheckBox T="bool?"
+            Checked="@(Current as bool?)"
+            CheckedChanged="@((bool? v) => Set(v))"
+            Enabled="@(!IsReadOnly)" />
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}

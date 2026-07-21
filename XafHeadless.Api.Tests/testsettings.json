@@ -1,0 +1,11 @@
+{
+  "Api": {
+    "BaseUrl": "http://localhost:5200"
+  },
+  "Test": {
+    "AdminUser": "Admin@company1.com",
+    "AdminPassword": "",
+    "RestrictedUser": "restricted@company1.com",
+    "RestrictedPassword": ""
+  }
+}

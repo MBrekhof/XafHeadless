@@ -1,0 +1,17 @@
+@* Makes the ACTIVE Blazor renderer observable -- this is the Auto-mode probe Task 4's E2E asserts on.
+   RendererInfo and AssignedRenderMode are ComponentBase members (net9+, verified by compilation on
+   net10 -- Microsoft.AspNetCore.Components, not a DevExpress API). Under InteractiveAuto the badge
+   reads "Server" on the first (interactive-server) visit and "WebAssembly" once the WASM runtime is
+   cached and takes over. data-testid keeps it stable for Playwright. *@
+<span class="badge @CssClass" data-testid="render-mode-badge" style="font-size:0.8rem;">
+    Renderer: <strong>@RendererInfo.Name</strong>
+    (@(RendererInfo.IsInteractive ? "interactive" : "static")@(AssignedRenderMode is { } m ? $", assigned {m.GetType().Name}" : ""))
+</span>
+
+@code {
+    string CssClass => RendererInfo.Name switch {
+        "WebAssembly" => "bg-success text-white",
+        "Server" => "bg-primary text-white",
+        _ => "bg-secondary text-white"   // "Static" during prerender
+    };
+}

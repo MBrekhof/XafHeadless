@@ -1,0 +1,183 @@
+@* Metadata-driven DetailView: fetches ViewMetadata (layout) for ViewId + the single object for
+   ObjectKey, materializes its members, and renders the layout via LayoutNodeRenderer. Owns the dirty
+   dictionary and the MemberErrors dictionary. Save posts ONLY changed members to the validating
+   api/save endpoint (never OData PATCH); a 422 populates per-member errors shown at each editor plus
+   an error summary. MemberTemplates is the per-member RenderFragment escape hatch Task 10 can supply.
+   "Order summary" hard-calls the ExecuteCommandAsync("OrderSummary", ...) round-trip
+   against this view's ObjectKey and shows its Message in a dismissible alert; ponytail: the button is
+   unconditional per the brief rather than gated to Order views only -- POC altitude.
+   SVR-001 Task 6.1: "Run Now" mirrors the SAME plumbing (same commandMessage/commandSuccess/
+   commandRunning fields, same alert) but IS gated to JobDefinition_DetailView -- EmailOrdersReport is a
+   global trigger that ignores ObjectKeys, so showing it on every DetailView (the OrderSummary wart)
+   would be semantically wrong here. Empty ObjectKeys, per the command's own design. *@
+@inject ApiClient Api
+
+@if (loading) {
+    <em>Loading…</em>
+} else if (error is not null) {
+    <p class="text-danger">@error</p>
+} else if (meta?.Layout is null || state is null) {
+    <em>View has no layout.</em>
+} else {
+    <div class="xaf-detail">
+        <div class="d-flex align-items-center mb-2">
+            <h3 class="me-3 mb-0">@meta.Caption</h3>
+            <span class="text-muted">@ObjectKey</span>
+        </div>
+
+        @if (messages.Count > 0) {
+            <div class="alert alert-danger py-2" role="alert">
+                <ul class="mb-0">
+                    @foreach (var msg in messages) { <li>@msg</li> }
+                </ul>
+            </div>
+        }
+
+        @if (commandMessage is not null) {
+            <div class="alert @(commandSuccess ? "alert-success" : "alert-warning") py-2 d-flex justify-content-between align-items-start"
+                 role="alert">
+                <span>@commandMessage</span>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="@(() => commandMessage = null)"></button>
+            </div>
+        }
+
+        <div class="xaf-savebar mb-3">
+            <DxButton Text="Save" Click="OnSave" Enabled="@(changes.Count > 0 && !saving)" />
+            <DxButton Text="Cancel" Click="OnCancel" RenderStyle="ButtonRenderStyle.Secondary"
+                      Enabled="@(changes.Count > 0)" />
+            <DxButton Text="Order summary" Click="OnOrderSummary" RenderStyle="ButtonRenderStyle.Info"
+                      Enabled="@(!commandRunning)" />
+            @if (ViewId == JobDefinitionDetailViewId) {
+                <DxButton Text="Run Now" Click="OnRunNow" RenderStyle="ButtonRenderStyle.Info"
+                          Enabled="@(!commandRunning)" />
+            }
+            @if (saved) { <span class="text-success ms-2">Saved.</span> }
+            @if (changes.Count > 0) { <span class="text-muted ms-2">@changes.Count unsaved change(s)</span> }
+        </div>
+
+        <CascadingValue Value="state">
+            <LayoutNodeRenderer Node="meta.Layout" />
+        </CascadingValue>
+    </div>
+}
+
+@code {
+    // SVR-001 Task 6.1: the Run Now gate -- confirmed live via api/model/navigation (Dispatch H Step 1)
+    // that JobDefinition's DetailView ViewId is exactly this (standard XAF "{Type}_DetailView" convention).
+    const string JobDefinitionDetailViewId = "JobDefinition_DetailView";
+
+    [Parameter] public string ViewId { get; set; } = "";
+    [Parameter] public string ObjectKey { get; set; } = "";
+    [Parameter] public IReadOnlyDictionary<string, RenderFragment<object?>>? MemberTemplates { get; set; }
+
+    ViewMetadata? meta;
+    Dictionary<string, object?> values = new();
+    readonly Dictionary<string, object?> changes = new();
+    Dictionary<string, string> memberErrors = new();
+    List<string> messages = new();
+    DetailViewState? state;
+    bool loading = true, saving, saved, commandRunning;
+    string? error;
+    string? loadedFor;
+    string? commandMessage;
+    bool commandSuccess;
+
+    protected override async Task OnParametersSetAsync() {
+        var target = $"{ViewId}|{ObjectKey}";
+        if (target == loadedFor) return;
+        await Load();
+        loadedFor = target;
+    }
+
+    async Task Load() {
+        loading = true;
+        error = null;
+        saved = false;
+        commandMessage = null;
+        changes.Clear();
+        memberErrors = new();
+        messages = new();
+        try {
+            meta = await Api.GetViewAsync(ViewId)
+                ?? throw new InvalidOperationException($"metadata request for '{ViewId}' failed");
+            if (meta.Layout is null) return;
+
+            var keyMember = meta.KeyMember;   // PH2-001: server-projected key, no client-side guessing
+            var filter = DetailBinding.KeyFilter(keyMember, ObjectKey);
+            var expand = DetailBinding.LookupExpand(meta.Layout);
+
+            ODataPage page;
+            try {
+                page = await Api.GetPageAsync(meta.ObjectType, new ODataQuery(0, 1, null, filter, null, expand));
+            } catch when (expand is not null) {
+                // A layout lookup member may not be an expandable EDM nav (model-vs-EDM divergence,
+                // task-8 finding). Degrade to a scalar-only fetch so one bad lookup can't blank the form.
+                page = await Api.GetPageAsync(meta.ObjectType, new ODataQuery(0, 1, null, filter, null, null));
+            }
+
+            if (page.Rows.Length == 0) { error = $"No {meta.ObjectType} found with key {ObjectKey}."; return; }
+            var row = page.Rows[0];
+            values = DetailBinding.AllItems(meta.Layout)
+                .Where(i => i.Member is not null)
+                .GroupBy(i => i.Member!)
+                .ToDictionary(g => g.Key, g => DetailBinding.ItemValue(row, g.First()));
+            BuildState();
+        } catch (Exception ex) {
+            error = $"Failed to load detail: {ex.Message}";
+        } finally {
+            loading = false;
+        }
+    }
+
+    void BuildState() => state = new DetailViewState {
+        ObjectKey = ObjectKey,
+        KeyMember = meta!.KeyMember,
+        Values = values,
+        Changes = changes,
+        Errors = memberErrors,
+        Api = Api,
+        MemberTemplates = MemberTemplates ?? new Dictionary<string, RenderFragment<object?>>(),
+        OnChanged = () => { saved = false; StateHasChanged(); }
+    };
+
+    async Task OnSave() {
+        saving = true;
+        saved = false;
+        var outcome = await Api.SaveAsync(meta!.ObjectType, ObjectKey, new Dictionary<string, object?>(changes));
+        saving = false;
+        if (outcome.Success) {
+            saved = true;
+            loadedFor = null;                       // force a full reload of fresh server values
+            await Load();
+            loadedFor = $"{ViewId}|{ObjectKey}";
+        } else {
+            memberErrors = outcome.MemberErrors;
+            messages = outcome.Messages.ToList();
+            BuildState();                           // new state instance -> editors re-render with errors
+        }
+    }
+
+    async Task OnOrderSummary() {
+        commandRunning = true;
+        var result = await Api.ExecuteCommandAsync("OrderSummary", new[] { ObjectKey });
+        commandRunning = false;
+        commandSuccess = result.Success;
+        commandMessage = result.Message;
+    }
+
+    async Task OnRunNow() {
+        commandRunning = true;
+        var result = await Api.ExecuteCommandAsync("EmailOrdersReport", System.Array.Empty<string>());
+        commandRunning = false;
+        commandSuccess = result.Success;
+        commandMessage = result.Message;
+    }
+
+    void OnCancel() {
+        changes.Clear();
+        memberErrors = new();
+        messages = new();
+        saved = false;
+        BuildState();
+    }
+}

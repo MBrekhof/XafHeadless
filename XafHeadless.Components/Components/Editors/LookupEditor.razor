@@ -1,0 +1,51 @@
+@inherits EditorComponentBase
+@inject ApiClient Api
+
+@* DxComboBox over the lookup target type's first 50 rows (api/odata/{ObjectType}?$top=50, no $select
+   -- honours the model-vs-EDM rule) with AutoSearch text filtering. Current is the FK value from the
+   expanded nav object; it preselects only when that row is within the fetched 50.
+   ponytail: 50-row cap + no display for out-of-window keys is fine for the POC; a keyed lookup fetch
+   would be the upgrade. A failed fetch (a member that isn't an expandable/queryable EDM nav) degrades
+   to showing the raw key, never crashing the form. *@
+@if (loadError is not null) {
+    <span class="text-muted">@Current</span>
+    <span class="badge bg-secondary ms-2">lookup unavailable</span>
+} else {
+    <DxComboBox Data="@items" TData="LookupItem" TValue="object"
+                Value="@Current"
+                ValueChanged="@((object? v) => Set(v))"
+                ValueFieldName="@nameof(LookupItem.Key)"
+                TextFieldName="@nameof(LookupItem.Text)"
+                ReadOnly="@IsReadOnly"
+                SearchMode="ListSearchMode.AutoSearch"
+                NullText=" " />
+}
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}
+
+@code {
+    public record LookupItem(object? Key, string Text);
+    List<LookupItem> items = new();
+    string? loadError;
+
+    protected override async Task OnInitializedAsync() {
+        if (Node.Lookup is not { } lk) { loadError = "no lookup metadata"; return; }
+        try {
+            var page = await Api.GetPageAsync(lk.ObjectType, new ODataQuery(0, 50, null, null, null, null));
+            items = page.Rows
+                .Select(r => new LookupItem(Scalar(r, lk.KeyMember), Text(r, lk.DisplayMember)))
+                .ToList();
+        } catch (Exception ex) {
+            loadError = ex.Message;
+        }
+    }
+
+    static object? Scalar(System.Text.Json.JsonElement r, string member) =>
+        r.TryGetProperty(member, out var el) && el.ValueKind != System.Text.Json.JsonValueKind.Null
+            ? (el.ValueKind == System.Text.Json.JsonValueKind.Number ? el.GetDecimal() : (object?)el.ToString())
+            : null;
+
+    static string Text(System.Text.Json.JsonElement r, string member) =>
+        r.TryGetProperty(member, out var el) ? el.ToString() : "";
+}

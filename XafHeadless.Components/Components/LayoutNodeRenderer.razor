@@ -1,0 +1,97 @@
+@* Recursively renders one LayoutNode of a DetailView. Kinds: group -> section (fieldset when it has
+   a caption, plain div otherwise), tabs/tab -> DxTabs/DxTabPage, item -> the mapped editor (or a
+   MemberTemplate override, or an "unsupported editor" badge), nestedList -> a master-detail
+   XafListView (Task 8's component, reused unchanged) scoped to the current detail object via
+   State.ObjectKey. Captionless single-child wrapper groups are collapsed away first. *@
+@using XafHeadless.Components.Components.Editors
+@inject EditorMap EditorMap
+@inject NavigationManager Navigation
+
+@{ var node = DetailBinding.Unwrap(Node); }
+
+@switch (node.Kind) {
+    case "group":
+        @if (!string.IsNullOrEmpty(node.Caption)) {
+            <fieldset class="xaf-group border rounded p-2 mb-2">
+                <legend class="fs-6 fw-bold w-auto mb-1">@node.Caption</legend>
+                @Children(node)
+            </fieldset>
+        } else {
+            <div class="xaf-group">@Children(node)</div>
+        }
+        break;
+
+    case "tabs":
+        <DxTabs>
+            @foreach (var tab in node.Children ?? Enumerable.Empty<LayoutNode>()) {
+                <DxTabPage Text="@(tab.Caption ?? "")">
+                    <div class="pt-2">@Children(tab)</div>
+                </DxTabPage>
+            }
+        </DxTabs>
+        break;
+
+    case "tab":
+        @Children(node)   @* only reached if a tab is rendered outside a tabs group *@
+        break;
+
+    case "item":
+        <div class="xaf-item mb-2">
+            <label class="form-label mb-0 text-muted small">@node.Caption</label>
+            @ItemEditor(node)
+        </div>
+        break;
+
+    case "nestedList":
+        <div class="xaf-nested-list my-2">
+            @if (!string.IsNullOrEmpty(node.Caption)) { <div class="fw-bold small text-muted mb-1">@node.Caption</div> }
+            <XafListView ViewId="@(node.ViewId ?? "")" MasterKeyMember="@node.MasterKeyMember" MasterKey="@State.ObjectKey"
+                         MasterKeyName="@State.KeyMember"
+                         OnRowSelected="@(key => NavigateToRow(node.ViewId, key))" />
+        </div>
+        break;
+}
+
+@code {
+    [Parameter] public LayoutNode Node { get; set; } = default!;
+    [CascadingParameter] public DetailViewState State { get; set; } = default!;
+
+    // Nested row click -> that row's own detail view, same "_ListView" -> "_DetailView" convention
+    // ListPage.razor already uses for the top-level list (falls out naturally, no new plumbing).
+    void NavigateToRow(string? nestedViewId, string key) {
+        if (string.IsNullOrEmpty(nestedViewId)) return;
+        Navigation.NavigateTo($"/detail/{nestedViewId.Replace("_ListView", "_DetailView")}/{key}");
+    }
+
+    RenderFragment Children(LayoutNode n) => @<text>
+        @foreach (var child in n.Children ?? Enumerable.Empty<LayoutNode>()) {
+            <LayoutNodeRenderer Node="child" />
+        }
+    </text>;
+
+    RenderFragment ItemEditor(LayoutNode item) => builder => {
+        var member = item.Member!;
+        if (State.MemberTemplates.TryGetValue(member, out var template)) {
+            builder.AddContent(0, template(State.Current(member)));
+            return;
+        }
+        var type = EditorMap.Resolve(item);
+        if (type is null) {
+            builder.OpenElement(1, "div");
+            builder.OpenElement(2, "span");
+            builder.AddAttribute(3, "class", "text-muted");
+            builder.AddContent(4, State.Current(member)?.ToString());
+            builder.CloseElement();
+            builder.OpenElement(5, "span");
+            builder.AddAttribute(6, "class", "badge bg-warning text-dark ms-2");
+            builder.AddContent(7, $"unsupported editor: {item.Editor}");
+            builder.CloseElement();
+            builder.CloseElement();
+            return;
+        }
+        builder.OpenComponent<DynamicComponent>(8);
+        builder.AddAttribute(9, "Type", type);
+        builder.AddAttribute(10, "Parameters", new Dictionary<string, object?> { ["Node"] = item });
+        builder.CloseComponent();
+    };
+}

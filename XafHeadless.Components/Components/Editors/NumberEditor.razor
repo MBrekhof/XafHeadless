@@ -1,0 +1,17 @@
+@inherits EditorComponentBase
+
+@* One spin editor for both "int" and "decimal" hints; nullable decimal lets the user clear it.
+   ponytail: decimal round-trips whole ints fine for the POC; a strict int editor is only needed
+   if a member rejects a decimal payload, which SaveController's per-member deserialize would surface. *@
+<DxSpinEdit T="decimal?"
+            Value="@ToDecimal(Current)"
+            ValueChanged="@((decimal? v) => Set(v))"
+            ReadOnly="@IsReadOnly" />
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}
+
+@code {
+    static decimal? ToDecimal(object? v) =>
+        v is null ? null : Convert.ToDecimal(v, System.Globalization.CultureInfo.InvariantCulture);
+}

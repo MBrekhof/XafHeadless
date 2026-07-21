@@ -1,0 +1,53 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+
+<div class="xaf-topbar d-flex align-items-center gap-3 px-3 py-2 border-bottom">
+    <span class="fw-bold">XafHeadless</span>
+    @* Always-visible render-mode probe (Task 4's Auto-mode assertion target). *@
+    <RenderModeBadge />
+</div>
+
+@* GAP-007: persists/restores the JWT to sessionStorage. Lives in the layout so it runs once per
+   full-page load in whichever render mode is active. *@
+<PersistAuth />
+
+<div class="xaf-body d-flex">
+    @* GAP-004: sidebar only while authenticated -- never on /login or pre-restore. Conditional
+       MOUNTING (not just CSS hiding) is deliberate: it means NavMenu's OnInitialized re-runs fresh on
+       every login (no stale menu from a prior user's session within the same circuit/runtime). *@
+    @if (AuthState.Token is not null) {
+        <div class="xaf-sidebar p-2 border-end" style="min-width: 200px;">
+            <NavMenu />
+        </div>
+    }
+    <div class="xaf-content p-3 flex-grow-1">
+        @Body
+    </div>
+</div>
+
+@code {
+    // GAP-007: one of several redirect deciders, NOT a single authority -- Home.Decide handles "/",
+    // AuthGuard handles a protected route reached by client-side navigation (Fix I-1), and this handles
+    // AuthState.Changed. What makes them safe together is that EACH is gated on RestoreAttempted, so
+    // none can false-bounce a persisted session to /login before its token is restored. This one covers
+    // the Changed events: an ApiClient 401 calls AuthState.SetToken(null); a restore that finds no
+    // stored token calls MarkRestored -- both raise Changed and land here. It lives in the layout so it
+    // applies under whichever interactive render mode (Server or WebAssembly) is currently active.
+    protected override void OnInitialized() => AuthState.Changed += OnAuthChanged;
+
+    // GAP-007: deferred until PersistAuth has attempted the first-interactive restore
+    // (RestoreAttempted). Before that, a null token means "not restored yet, not necessarily logged
+    // out" -- redirecting then would bounce a persisted session to /login and defeat the feature.
+    // GAP-004: ALSO re-renders unconditionally so the sidebar's `AuthState.Token is not null` check
+    // reflects every token change (restore, login, logout, 401) -- a child page calling its own
+    // StateHasChanged (e.g. AuthGuard) does not bubble up to re-render this layout.
+    void OnAuthChanged() {
+        if (AuthState.RestoreAttempted && AuthState.Token is null)
+            InvokeAsync(() => Navigation.NavigateTo("/login"));
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => AuthState.Changed -= OnAuthChanged;
+}

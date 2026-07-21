@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The demo module ships a CA1416 (platform-specific) surface; it is read-only, so suppress. -->
+    <NoWarn>CA1416;$(NoWarn)</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- READ-ONLY reference to DevExpress's installed OutlookInspired demo module (26.1.3 / net10.0).
+         Never modified. Brings the DbContext, business objects, Updater/DataGenerator, and the
+         DevExpress.ExpressApp.* transitive package graph (incl. Blazor.All, MultiTenancy.EFCore). -->
+    <ProjectReference Include="$(OutlookInspiredModulePath)" />
+    <!-- SVR-001 Task 2.2: JobDefinition/JobExecutionRecord live in the JobServer project (host-owned
+         shared BOs); the Api needs the types to expose them via OData. JobServer must never reference
+         back to the Api; this is the only direction. -->
+    <ProjectReference Include="..\XafHeadless.JobServer\XafHeadless.JobServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DevExpress.ExpressApp.WebApi" Version="26.1.3" />
+    <!-- Adds AddMultiTenancy() to the standalone Web API application builder (IWebApiApplicationBuilder). -->
+    <PackageReference Include="DevExpress.ExpressApp.MultiTenancy.WebApi.EFCore" Version="26.1.3" />
+    <PackageReference Include="Microsoft.AspNetCore.OData" Version="9.3.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+    <!-- XAF EF Core resolves design-time services at runtime in a headless host (matches the DevExpress
+         WebApi template); the demo module references it only as a dev-only PrivateAsset. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <PrivateAssets>none</PrivateAssets>
+      <IncludeAssets>all</IncludeAssets>
+    </PackageReference>
+    <!-- SVR-001 Task 3.4: Hangfire CLIENT only (enqueue into the JobServer's shared SQL storage);
+         no Hangfire.AspNetCore here, this host runs no worker/dashboard. Version 1.8.21 matches
+         XafHeadless.JobServer so both processes serialize jobs identically (see Startup.cs). -->
+    <PackageReference Include="Hangfire.Core" Version="1.8.21" />
+    <PackageReference Include="Hangfire.SqlServer" Version="1.8.21" />
+  </ItemGroup>
+
+  <!-- SVR-004: the JobServer ProjectReference above is Web-Sdk-to-Web-Sdk, so MSBuild's standard
+       transitive project-reference content copying (GetCopyToPublishDirectoryItems) pulls
+       JobServer's own appsettings*.json into this project's publish output, colliding with the
+       Api's own (different ConnectionStrings/JWT config) -> NETSDK1152. The only ProjectReference
+       metadata that gates that propagation is Private, but Private ALSO gates ReferenceCopyLocalPaths
+       (verified: setting Private=false on the reference above does silence NETSDK1152, but it also
+       drops JobServer.dll from the publish output entirely, which is unusable since the Api needs that assembly
+       at runtime for OData type exposure). So instead, drop just the JobServer-sourced duplicates
+       from the resolved publish item list; this is the documented ResolvedFileToPublish exclusion
+       pattern (Microsoft Learn's publish-profile "exclude files" sample) and runs before the SDK's
+       own duplicate check (_HandleFileConflictsForPublish, also AfterTargets="ComputeFilesToPublish"
+       but registered later via the SDK's own targets import). JobServer.csproj is untouched, so
+       `dotnet publish XafHeadless.JobServer` still keeps its own appsettings*.json. -->
+  <Target Name="ExcludeJobServerContentFromApiPublish" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+          Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('appsettings'))
+                     and $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\XafHeadless.JobServer\'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

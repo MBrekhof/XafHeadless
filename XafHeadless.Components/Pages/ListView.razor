@@ -1,0 +1,23 @@
+@* Brief names this file Pages/ListPage.razor; Task 7's scaffold already created this file at the
+   same "/list/{ViewId}" route as Pages/ListView.razor, so it's edited in place here instead of
+   creating a duplicate route (Blazor doesn't allow two components claiming the same @page). *@
+@page "/list/{ViewId}"
+@inject NavigationManager Navigation
+
+<PageTitle>@ViewId</PageTitle>
+
+@* GAP-007: AuthGuard defers rendering (and therefore the OData fetch) until the JWT is present --
+   restored from sessionStorage on the first interactive render. The /login redirect is centralized in
+   MainLayout. *@
+<AuthGuard>
+    <XafListView ViewId="@ViewId" OnRowSelected="OnRowSelected" />
+</AuthGuard>
+
+@code {
+    [Parameter] public string ViewId { get; set; } = "";
+
+    // DetailViewId = ViewId with "_ListView" -> "_DetailView", per the brief. /detail/... doesn't
+    // exist yet (Task 9) -- a 404/placeholder there is expected for this task's verification.
+    void OnRowSelected(string key) =>
+        Navigation.NavigateTo($"/detail/{ViewId.Replace("_ListView", "_DetailView")}/{key}");
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "Name": "Run POC (Api + Web)",
+    "Projects": [
+      {
+        "Path": "XafHeadless.Api\\XafHeadless.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "XafHeadless.Web\\XafHeadless.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      }
+    ]
+  }
+]

@@ -1,0 +1,31 @@
+@inherits EditorComponentBase
+
+@* Enum values + captions come from the item metadata (no fetch). Current is the canonicalized value
+   token (see DetailBinding.ItemValue), so it matches an option's Value string.
+   ponytail: an edited enum is POSTed as its value token; round-trip through SaveController relies on
+   the server accepting that token for the enum member -- not exercised by the POC's save flow. *@
+<DxComboBox Data="@options" TData="Option" TValue="string"
+            Value="@((string?)Current)"
+            ValueChanged="@((string? v) => Set(v))"
+            ValueFieldName="@nameof(Option.Value)"
+            TextFieldName="@nameof(Option.Caption)"
+            ReadOnly="@IsReadOnly"
+            SearchMode="ListSearchMode.AutoSearch"
+            NullText=" " />
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}
+
+@code {
+    public record Option(string Value, string Caption);
+    List<Option> options = new();
+
+    protected override void OnParametersSet() =>
+        options = Node.Enum?.Select(e => new Option(Canon(e.Value), e.Caption)).ToList() ?? new();
+
+    static string Canon(object? v) => v switch {
+        System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.String } el => el.GetString() ?? "",
+        System.Text.Json.JsonElement el => el.GetRawText(),
+        _ => Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) ?? ""
+    };
+}

@@ -1,0 +1,31 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    @* UI-001: Office White is a DevExpress *Classic* theme -- Classic themes bundle Bootstrap CSS, so one
+       theme styles BOTH the DevExpress components AND the app's own Bootstrap-classed chrome cohesively.
+       Fluent (the previous theme) is Design-System-based and does NOT style native HTML/Bootstrap chrome,
+       which left the surrounding app bare -> the "very minimal styling" the owner saw. Because the Classic
+       theme provides Bootstrap, the standalone bootstrap.min.css link is dropped (loading both double-loads
+       and conflicts). RegisterTheme (over raw links) manages the CSS cache across DX versions. Verified via
+       dxdocs 401523 (26.1). To try another look it's a one-liner: Themes.BlazingBerry / .Purple / .BlazingDark. *@
+    @DxResourceManager.RegisterTheme(Themes.OfficeWhite)
+    @DxResourceManager.RegisterScripts()
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="InteractiveAuto" />
+</head>
+
+<body>
+    @* Global InteractiveAuto: the router (and the whole RCL page tree) runs Server-side on the first
+       visit, then WebAssembly once the runtime is cached. Routes lives in the RCL. *@
+    <Routes @rendermode="InteractiveAuto" />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>

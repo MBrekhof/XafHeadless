@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same pin as XafHeadless.Api.Tests.csproj: see that file's comment. Neither the MSTest 4.0.2
+         metapackage nor Microsoft.NET.Test.Sdk brings Configuration.Json in transitively for a net10
+         console-style test host, and this repo has no Directory.Packages.props/CPM to source a floating
+         default version from. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageReference Include="MSTest" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SVR-001 Task 7.1: needed only by M4RecipientGuardTests, to construct JobDispatchService directly.
+         Transitively brings Microsoft.Data.SqlClient (via the JobServer's Hangfire.SqlServer/EFCore SQL
+         Server graph: confirmed in XafHeadless.JobServer\obj\project.assets.json, Microsoft.Data.SqlClient
+         6.1.1) for ReportRenderTests' direct SQL read of ReportArtifact. -->
+    <ProjectReference Include="..\XafHeadless.JobServer\XafHeadless.JobServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="testsettings.json" CopyToOutputDirectory="Always" />
+    <None Update="testsettings.Development.json" CopyToOutputDirectory="Always" Condition="Exists('testsettings.Development.json')" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,37 @@
+@* GAP-004: minimal flat client menu, projected from the model's navigation tree (server-side
+   NavigationProjector). Fetches api/model/navigation ONCE it has a token -- gated on
+   AuthState.Token is not null so a null-token fetch never 401s (GAP-007 auth timing). Hosted only
+   inside MainLayout's `AuthState.Token is not null` sidebar block, so this component is only ever
+   created (OnInitialized runs) while authenticated, and is destroyed on logout -- a subsequent
+   login creates a fresh instance that re-fetches, so no stale/cross-user cache risk. *@
+@inject ApiClient Api
+@inject AuthState AuthState
+
+@if (loading) {
+    <em>Loading menu…</em>
+} else if (error is not null) {
+    <p style="color:red">@error</p>
+} else if (items is { Count: > 0 }) {
+    <nav class="xaf-navmenu d-flex flex-column">
+        @foreach (var item in items) {
+            <NavLink href="@($"/list/{item.ViewId}")" class="d-block px-2 py-1" Match="NavLinkMatch.All">@item.Caption</NavLink>
+        }
+    </nav>
+}
+
+@code {
+    List<NavigationItemDto>? items;
+    bool loading = true;
+    string? error;
+
+    protected override async Task OnInitializedAsync() {
+        if (AuthState.Token is null) { loading = false; return; } // belt-and-suspenders; see remarks
+        try {
+            items = await Api.GetNavigationAsync();
+        } catch (Exception ex) {
+            error = $"Failed to load menu: {ex.Message}";
+        } finally {
+            loading = false;
+        }
+    }
+}

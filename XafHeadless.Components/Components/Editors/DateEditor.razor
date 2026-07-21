@@ -1,0 +1,10 @@
+@inherits EditorComponentBase
+
+@* DxDateEdit binds via Date/DateChanged (not Value), verified: dxdocs "@bind-Date". *@
+<DxDateEdit T="DateTime?"
+            Date="@(Current as DateTime?)"
+            DateChanged="@((DateTime? v) => Set(v))"
+            ReadOnly="@IsReadOnly" />
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}

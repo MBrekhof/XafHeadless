@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="XafHeadless.Api.Tests/XafHeadless.Api.Tests.csproj" />
+  <Project Path="XafHeadless.Api/XafHeadless.Api.csproj" />
+  <Project Path="XafHeadless.JobServer/XafHeadless.JobServer.csproj" />
+  <Project Path="XafHeadless.JobServer.Tests/XafHeadless.JobServer.Tests.csproj" />
+  <Project Path="XafHeadless.Components.Tests/XafHeadless.Components.Tests.csproj" />
+  <Project Path="XafHeadless.Components/XafHeadless.Components.csproj" />
+  <Project Path="XafHeadless.Web.Client/XafHeadless.Web.Client.csproj" />
+  <Project Path="XafHeadless.Web/XafHeadless.Web.csproj" />
+  <Project Path="XafHeadless.E2E/XafHeadless.E2E.csproj" />
+</Solution>

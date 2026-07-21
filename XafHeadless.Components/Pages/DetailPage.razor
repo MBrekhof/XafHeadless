@@ -1,0 +1,14 @@
+@page "/detail/{ViewId}/{ObjectKey}"
+
+<PageTitle>@ViewId</PageTitle>
+
+@* GAP-007: AuthGuard defers rendering (and the OData fetch) until the JWT is present -- restored from
+   sessionStorage on the first interactive render. The /login redirect is centralized in MainLayout. *@
+<AuthGuard>
+    <XafDetailView ViewId="@ViewId" ObjectKey="@ObjectKey" />
+</AuthGuard>
+
+@code {
+    [Parameter] public string ViewId { get; set; } = "";
+    [Parameter] public string ObjectKey { get; set; } = "";
+}

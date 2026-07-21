@@ -1,0 +1,46 @@
+@* GAP-007: gates a protected page's content on the JWT actually being present, and -- once restore
+   has been attempted and found no token -- redirects to /login itself. This wrapper keeps the page
+   from rendering (and therefore from firing an ApiClient call with a null token) during prerender and
+   the pre-restore interactive window: it shows a transient "Loading…". Once the token is restored,
+   AuthState.Changed re-renders this and the content mounts and fetches with a valid Bearer token.
+
+   Fix I-1: the not-authenticated branch owns the /login redirect for a protected route reached by
+   CLIENT-SIDE navigation (e.g. browser Back after a session-expiry logout). MainLayout only redirects
+   on AuthState.Changed, which does NOT fire on such a navigation -- so without this the page would
+   dead-end on "Loading…". The redirect is gated on RestoreAttempted, so an authenticated (token
+   restored, non-null) session is NEVER redirected, and neither is the pre-restore window. *@
+@implements IDisposable
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+
+@if (AuthState.Token is not null) {
+    @ChildContent
+} else {
+    <em>Loading…</em>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    protected override void OnInitialized() {
+        AuthState.Changed += OnChanged;
+        // Covers the SPA-nav case: this guard mounting when RestoreAttempted is ALREADY true and the
+        // token is null (unauthenticated navigation to a protected route). During prerender / the
+        // interactive mount before restore, RestoreAttempted is false -> no redirect.
+        RedirectIfUnauthenticated();
+    }
+
+    void OnChanged() {
+        // Covers restore completing (or a 401) AFTER the guard mounted: MarkRestored / SetToken(null)
+        // raise Changed with the token still null -> redirect.
+        RedirectIfUnauthenticated();
+        InvokeAsync(StateHasChanged);
+    }
+
+    void RedirectIfUnauthenticated() {
+        if (AuthState.RestoreAttempted && AuthState.Token is null)
+            InvokeAsync(() => Navigation.NavigateTo("/login"));
+    }
+
+    public void Dispose() => AuthState.Changed -= OnChanged;
+}

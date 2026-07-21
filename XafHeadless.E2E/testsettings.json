@@ -1,0 +1,11 @@
+{
+  "Client": { "BaseUrl": "http://localhost:5220" },
+  "Api": { "BaseUrl": "http://localhost:5200" },
+  "Test": {
+    "AdminUser": "Admin@company1.com",
+    "AdminPassword": "",
+
+    "OrderKey": "771e968e-556e-48b7-955b-fe8cf6176477",
+    "EmployeeKey": "0ba7323e-5c81-4675-a922-2dfe3ce545f5"
+  }
+}

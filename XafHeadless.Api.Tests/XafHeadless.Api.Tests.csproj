@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PH2-006: tried removing this explicit pin (carried since Task 1, when the project targeted
+         net8) to let it flow from the net10 SDK/transitive default; removal broke the build
+         (CS0234/CS0246: Microsoft.Extensions.Configuration namespace not found). Neither the MSTest
+         4.0.2 metapackage nor Microsoft.NET.Test.Sdk brings in Configuration.Json transitively for a
+         net10 console-style test host, and this repo has no Directory.Packages.props/CPM to source a
+         floating default version from, so an explicit, versioned PackageReference stays required.
+         Left as-is (not bumped past 8.0.1 either; that's a separate, unrequested version-bump risk). -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageReference Include="MSTest" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="testsettings.json" CopyToOutputDirectory="Always" />
+    <None Update="testsettings.Development.json" CopyToOutputDirectory="Always" Condition="Exists('testsettings.Development.json')" />
+  </ItemGroup>
+
+</Project>

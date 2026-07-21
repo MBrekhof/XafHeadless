@@ -1,0 +1,56 @@
+@* GAP-007: centralizes JWT persistence so no caller can forget it. Writes the token to plain
+   sessionStorage on every AuthState change (removes it on logout/401), and RESTORES it on the FIRST
+   INTERACTIVE render -- the only point JS interop is legal (it throws during prerender). Hosted once
+   in MainLayout so it runs on every full-page entry in BOTH render modes (Server and, after the Auto
+   takeover, WebAssembly).
+
+   Storage = plain sessionStorage via IJSRuntime, NOT ProtectedSessionStorage: that one lives in
+   Microsoft.AspNetCore.Components.Server and only works on a Server circuit -- it would no-op/throw in
+   the WebAssembly render phase this InteractiveAuto client also runs. Plain sessionStorage interop is
+   identical in both render modes. sessionStorage is per-tab and survives reload -- the right lifetime
+   for a session JWT that's already sent as a Bearer token. *@
+@implements IDisposable
+@inject AuthState AuthState
+@inject IJSRuntime JS
+
+@code {
+    const string Key = "xafheadless.jwt";
+
+    // False during prerender: JS interop is illegal until the first interactive render has happened.
+    bool canUseJs;
+
+    protected override void OnInitialized() => AuthState.Changed += OnAuthChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        // OnAfterRenderAsync never fires during prerender, so firstRender here already implies an
+        // interactive render; the RendererInfo.IsInteractive check is belt-and-suspenders.
+        if (!firstRender || !RendererInfo.IsInteractive) return;
+        canUseJs = true;
+        // Fix M-1: MarkRestored() must ALWAYS run, even if the sessionStorage read throws -- otherwise
+        // RestoreAttempted stays false forever, every deferred redirect stays gated off, and every
+        // protected page dead-ends on "Loading…". SetToken-before-MarkRestored ordering is preserved on
+        // the success path so the token is present the instant the latch flips.
+        try {
+            var stored = await JS.InvokeAsync<string?>("sessionStorage.getItem", Key);
+            if (!string.IsNullOrEmpty(stored) && AuthState.Token is null) AuthState.SetToken(stored);
+        } finally {
+            AuthState.MarkRestored();   // unblocks the deferred /login-redirect decision either way
+        }
+    }
+
+    // Persist on every change; gated behind canUseJs so it never runs during prerender. SetToken above
+    // also routes through here (harmless idempotent re-write of the just-restored token).
+    void OnAuthChanged() {
+        if (!canUseJs) return;
+        _ = PersistAsync(AuthState.Token);
+    }
+
+    async Task PersistAsync(string? token) {
+        // ponytail: fire-and-forget storage write; a failed write costs persistence for that one
+        // change, never the correctness of the in-memory session.
+        if (token is null) await JS.InvokeVoidAsync("sessionStorage.removeItem", Key);
+        else await JS.InvokeVoidAsync("sessionStorage.setItem", Key, token);
+    }
+
+    public void Dispose() => AuthState.Changed -= OnAuthChanged;
+}

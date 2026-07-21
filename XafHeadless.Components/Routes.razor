@@ -1,0 +1,11 @@
+@* Global router for the Blazor Web App. The host App.razor renders this with
+   @rendermode="InteractiveAuto", so the router and the entire page tree run Server-side on the
+   first visit and switch to WebAssembly once the runtime is cached. AppAssembly is THIS RCL --
+   every routable page (list/detail/login/home) lives here, shared byte-identically across both
+   render sides. *@
+<Router AppAssembly="typeof(Routes).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

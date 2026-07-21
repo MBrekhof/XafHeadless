@@ -1,0 +1,11 @@
+@inherits EditorComponentBase
+
+@* DxTextBox forwards unmatched HTML attributes to its inner <input>, so maxlength enforces the
+   model's Size (verified: dxdocs "HTML Attributes"). Blazor omits the attribute when MaxLength is null. *@
+<DxTextBox Text="@((string?)Current)"
+           TextChanged="@((string? v) => Set(v))"
+           ReadOnly="@IsReadOnly"
+           maxlength="@Node.MaxLength" />
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}

@@ -1,0 +1,386 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "mcp-excalidraw-server",
+  "elements": [
+    {
+      "id": "mrib4885wayq9hnln6",
+      "type": "text",
+      "x": 365,
+      "y": 40,
+      "strokeColor": "#1e1e1e",
+      "text": "Headless XAF on DevExpress 26.1",
+      "fontSize": 28,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.545Z",
+      "updatedAt": "2026-07-21T21:59:37.545Z",
+      "version": 1
+    },
+    {
+      "id": "module",
+      "type": "rectangle",
+      "x": 40,
+      "y": 215,
+      "width": 215,
+      "height": 100,
+      "backgroundColor": "#f1f3f5",
+      "strokeColor": "#495057",
+      "roughness": 1,
+      "createdAt": "2026-07-21T21:59:37.545Z",
+      "updatedAt": "2026-07-21T21:59:37.545Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885qff0qzizgoo",
+      "type": "text",
+      "x": 58,
+      "y": 232,
+      "strokeColor": "#495057",
+      "text": "OutlookInspiredDemo\n.Module\n26.1 · read-only ref",
+      "fontSize": 13,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.545Z",
+      "updatedAt": "2026-07-21T21:59:37.545Z",
+      "version": 1
+    },
+    {
+      "id": "api",
+      "type": "rectangle",
+      "x": 330,
+      "y": 135,
+      "width": 345,
+      "height": 310,
+      "backgroundColor": "#e7f5ff",
+      "strokeColor": "#1971c2",
+      "roughness": 1,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "mrib48851mepn7jdcj7j",
+      "type": "text",
+      "x": 350,
+      "y": 152,
+      "strokeColor": "#1971c2",
+      "text": "XafHeadless.Api    :5200",
+      "fontSize": 18,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885q1qdx2080wo",
+      "type": "text",
+      "x": 350,
+      "y": 184,
+      "strokeColor": "#1e1e1e",
+      "text": "multi-tenant XAF Web API host\nno UI · no circuits · async",
+      "fontSize": 13,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885mpofu7xuo1h",
+      "type": "text",
+      "x": 350,
+      "y": 248,
+      "strokeColor": "#1e1e1e",
+      "text": "GET  /api/model/views · /navigation\nGET  /api/odata      (reads)\nPOST /api/save       (validated)\n        OData writes -> 405\n     /api/commands · /api/prefs\nsecurity: IsGranted, per request",
+      "fontSize": 12,
+      "fontFamily": 3,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "client",
+      "type": "rectangle",
+      "x": 845,
+      "y": 135,
+      "width": 350,
+      "height": 310,
+      "backgroundColor": "#ebfbee",
+      "strokeColor": "#2f9e44",
+      "roughness": 1,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "mrib488557641dvbr7e",
+      "type": "text",
+      "x": 865,
+      "y": 152,
+      "strokeColor": "#2f9e44",
+      "text": "Blazor Web App    :5220",
+      "fontSize": 18,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885nmqmsaoz4bq",
+      "type": "text",
+      "x": 865,
+      "y": 184,
+      "strokeColor": "#1e1e1e",
+      "text": "InteractiveAuto\nServer   +   WebAssembly",
+      "fontSize": 13,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885p8l6k4lovf",
+      "type": "text",
+      "x": 865,
+      "y": 244,
+      "strokeColor": "#1e1e1e",
+      "text": "*.Components (RCL)\nXafListView / XafDetailView\nzero XAF engine references\nJWT in sessionStorage —\nsurvives render-mode takeover",
+      "fontSize": 12,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.546Z",
+      "updatedAt": "2026-07-21T21:59:37.546Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885ezsiinqwox4",
+      "type": "arrow",
+      "x": 262.9802361474834,
+      "y": 273.13241099630164,
+      "strokeColor": "#495057",
+      "strokeWidth": 1,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          59.03952770503315,
+          4.157713218664298
+        ]
+      ],
+      "start": {
+        "id": "module"
+      },
+      "end": {
+        "id": "api"
+      },
+      "endArrowhead": "arrow",
+      "createdAt": "2026-07-21T21:59:37.547Z",
+      "updatedAt": "2026-07-21T21:59:37.547Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885hlrbb8d11cs",
+      "type": "text",
+      "x": 262,
+      "y": 222,
+      "strokeColor": "#495057",
+      "text": "read-only\nref",
+      "fontSize": 11,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.547Z",
+      "updatedAt": "2026-07-21T21:59:37.547Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885v35k9aoc4d",
+      "type": "arrow",
+      "x": 683,
+      "y": 290,
+      "strokeColor": "#1e1e1e",
+      "strokeWidth": 2,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          154,
+          0
+        ]
+      ],
+      "start": {
+        "id": "api"
+      },
+      "end": {
+        "id": "client"
+      },
+      "endArrowhead": "arrow",
+      "createdAt": "2026-07-21T21:59:37.547Z",
+      "updatedAt": "2026-07-21T21:59:37.547Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885mhs1iyn269b",
+      "type": "text",
+      "x": 682,
+      "y": 205,
+      "strokeColor": "#1e1e1e",
+      "text": "JSON over HTTP\nmodel · security\ndata · validate",
+      "fontSize": 13,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.547Z",
+      "updatedAt": "2026-07-21T21:59:37.547Z",
+      "version": 1
+    },
+    {
+      "id": "mrib4885hnkha14kooi",
+      "type": "text",
+      "x": 330,
+      "y": 700,
+      "strokeColor": "#868e96",
+      "text": "Both hosts call the API purely over HTTP through one shared\nClientServiceRegistration — the Server and WASM hosts can't drift.",
+      "fontSize": 12,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T21:59:37.547Z",
+      "updatedAt": "2026-07-21T22:00:49.556Z",
+      "version": 2
+    },
+    {
+      "id": "jobserver",
+      "type": "rectangle",
+      "x": 330,
+      "y": 505,
+      "width": 345,
+      "height": 155,
+      "backgroundColor": "#fff4e6",
+      "strokeColor": "#e8590c",
+      "roughness": 1,
+      "createdAt": "2026-07-21T22:00:45.316Z",
+      "updatedAt": "2026-07-21T22:00:45.316Z",
+      "version": 1
+    },
+    {
+      "id": "js-title",
+      "type": "text",
+      "x": 350,
+      "y": 522,
+      "strokeColor": "#e8590c",
+      "text": "XafHeadless.JobServer    :5300",
+      "fontSize": 18,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T22:00:45.316Z",
+      "updatedAt": "2026-07-21T22:00:45.316Z",
+      "version": 1
+    },
+    {
+      "id": "js-sub",
+      "type": "text",
+      "x": 350,
+      "y": 556,
+      "strokeColor": "#1e1e1e",
+      "text": "UI-less XAF host · Hangfire worker\nsole worker · no HTTP data surface",
+      "fontSize": 13,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T22:00:45.317Z",
+      "updatedAt": "2026-07-21T22:00:45.317Z",
+      "version": 1
+    },
+    {
+      "id": "js-body",
+      "type": "text",
+      "x": 350,
+      "y": 602,
+      "strokeColor": "#1e1e1e",
+      "text": "EmailOrdersReport: render -> PDF -> email\ncron from JobDefinition · Run Now\nMailKit · tenant-isolated render scope",
+      "fontSize": 12,
+      "fontFamily": 3,
+      "createdAt": "2026-07-21T22:00:45.317Z",
+      "updatedAt": "2026-07-21T22:00:45.317Z",
+      "version": 1
+    },
+    {
+      "id": "mrv76i2jgxt987qyvs",
+      "type": "arrow",
+      "x": 502.5,
+      "y": 453,
+      "strokeColor": "#1e1e1e",
+      "strokeWidth": 2,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          44
+        ]
+      ],
+      "start": {
+        "id": "api"
+      },
+      "end": {
+        "id": "jobserver"
+      },
+      "endArrowhead": "arrow",
+      "createdAt": "2026-07-21T22:00:45.317Z",
+      "updatedAt": "2026-07-21T22:00:45.317Z",
+      "version": 1
+    },
+    {
+      "id": "enqueue-label",
+      "type": "text",
+      "x": 515,
+      "y": 452,
+      "strokeColor": "#1e1e1e",
+      "text": "enqueue\nshared Hangfire SQL",
+      "fontSize": 12,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T22:00:45.317Z",
+      "updatedAt": "2026-07-21T22:00:45.317Z",
+      "version": 1
+    },
+    {
+      "id": "module-share-arrow",
+      "type": "arrow",
+      "x": 147,
+      "y": 315,
+      "strokeColor": "#868e96",
+      "strokeWidth": 1,
+      "strokeStyle": "dashed",
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          272
+        ],
+        [
+          180,
+          272
+        ]
+      ],
+      "endArrowhead": "arrow",
+      "createdAt": "2026-07-21T22:00:45.317Z",
+      "updatedAt": "2026-07-21T22:00:45.317Z",
+      "version": 1
+    },
+    {
+      "id": "module-share-label",
+      "type": "text",
+      "x": 45,
+      "y": 430,
+      "strokeColor": "#868e96",
+      "text": "same module\nshared by\nboth hosts",
+      "fontSize": 11,
+      "fontFamily": 2,
+      "createdAt": "2026-07-21T22:00:45.317Z",
+      "updatedAt": "2026-07-21T22:00:45.317Z",
+      "version": 1
+    }
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": null
+  }
+}

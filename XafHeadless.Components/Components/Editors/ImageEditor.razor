@@ -1,0 +1,24 @@
+@inherits EditorComponentBase
+
+@* UI-001 / BUG-001: a byte[] member projects as an "image" item (ViewMetadataProjector.ClassifyDataType).
+   OData serializes Edm.Binary as a base64 string, so Current is that string -> render it as a data-URI
+   <img>. Read-only: this thin client has no image-upload editor (a write-capable blob editor is future
+   work); the point here is that a blob renders as a picture instead of the old "unsupported editor" badge. *@
+@if (Current is string { Length: > 0 } b64) {
+    <img src="data:@Mime(b64);base64,@b64" class="xaf-image" alt="@Node.Caption" />
+} else {
+    <span class="text-muted small">(no image)</span>
+}
+
+@code {
+    // Detect the image type from the base64 prefix (magic bytes -- per the "magic bytes, not extensions"
+    // rule): a raw byte[] blob carries no MIME. Covers the demo's images; defaults to png (browsers sniff
+    // most mismatches anyway, but a correct type avoids the edge cases that don't).
+    static string Mime(string b64) => b64 switch {
+        _ when b64.StartsWith("/9j/") => "image/jpeg",
+        _ when b64.StartsWith("R0lGOD") => "image/gif",
+        _ when b64.StartsWith("UklGR") => "image/webp",
+        _ when b64.StartsWith("PHN2") || b64.StartsWith("PD94") => "image/svg+xml",
+        _ => "image/png",
+    };
+}

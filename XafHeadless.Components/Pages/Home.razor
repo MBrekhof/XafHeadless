@@ -1,0 +1,30 @@
+@page "/"
+@implements IDisposable
+@inject ApiClient Api
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+
+@code {
+    protected override void OnInitialized() {
+        AuthState.Changed += Decide;
+        Decide();
+    }
+
+    // GAP-007: deferred routing. Don't send a (possibly persisted) user anywhere until PersistAuth has
+    // attempted the first-interactive restore -- otherwise an authenticated reload of "/" bounces to
+    // /login before the token is back. Token present -> first projected nav item; restore done and
+    // still no token -> login; otherwise wait (Changed re-invokes Decide when restore completes).
+    void Decide() {
+        if (AuthState.Token is not null) InvokeAsync(NavigateToFirstItemAsync);
+        else if (AuthState.RestoreAttempted) InvokeAsync(() => Navigation.NavigateTo("/login"));
+    }
+
+    // GAP-004: model-driven landing, replacing the old hardcoded /list/Order_ListView. Falls back to
+    // /login if the projected menu is empty (e.g. a user with no readable ListView).
+    async Task NavigateToFirstItemAsync() {
+        var items = await Api.GetNavigationAsync();
+        Navigation.NavigateTo(items.Count > 0 ? $"/list/{items[0].ViewId}" : "/login");
+    }
+
+    public void Dispose() => AuthState.Changed -= Decide;
+}

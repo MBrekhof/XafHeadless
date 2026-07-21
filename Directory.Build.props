@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    ============================================================================
+    DevExpress demo module location
+    ============================================================================
+    XafHeadless.Api and XafHeadless.JobServer reference DevExpress's OutlookInspired
+    XAF demo project ("OutlookInspiredDemo.Module") — the model this platform is
+    grounded on. That module is NOT vendored into this repo; it ships with the
+    DevExpress 26.1 demos you install locally (a licensed DevExpress subscription).
+
+    `DevExpressDemosDir` defaults to the standard Windows demos location. If yours
+    is elsewhere, override it WITHOUT editing this file — either:
+
+      dotnet build XafHeadless.slnx -p:DevExpressDemosDir="D:\your\DevExpress Demos 26.1"
+
+    or set a `DevExpressDemosDir` environment variable. The two hosts then resolve
+    `OutlookInspiredModulePath` from it. See the README "DevExpress demo module" section.
+    ============================================================================
+  -->
+  <PropertyGroup>
+    <DevExpressDemosDir Condition="'$(DevExpressDemosDir)' == ''">C:\Users\Public\Documents\DevExpress Demos 26.1</DevExpressDemosDir>
+    <OutlookInspiredModulePath>$(DevExpressDemosDir)\Components\XAF\OutlookInspiredDemo.NET.EFCore\CS\OutlookInspiredDemo.Module\OutlookInspiredDemo.Module.csproj</OutlookInspiredModulePath>
+  </PropertyGroup>
+
+</Project>

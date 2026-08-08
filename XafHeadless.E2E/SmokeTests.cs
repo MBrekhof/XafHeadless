@@ -11,8 +11,8 @@ namespace XafHeadless.E2E;
 // apps must already be running (production-style: published + hosted, not `dotnet run`); the
 // orchestrator publishes + hosts + health-checks them, runs this, then kills them.
 //
-// Selectors were locked against the LIVE 26.1.3 DOM (Task 4 exploration, same-session Playwright MCP
-// probes):
+// Selectors were locked against the LIVE DOM (Task 4 exploration, same-session Playwright MCP probes) on
+// 26.1.3, and still hold on 26.1.4 -- the suite runs green there (2026-08-08):
 //  - grid data rows are class-less <tbody> <tr>; the empty-row placeholder carries .dxbl-grid-empty-row,
 //    so data rows = ".dxbl-grid-table tbody tr:not(.dxbl-grid-empty-row)" -- UNCHANGED from the 25.2 era
 //    (DevExpress kept the same DxGrid DOM/class contract across the 25.2 -> 26.1 bump).

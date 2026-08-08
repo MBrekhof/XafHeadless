@@ -5,9 +5,11 @@ Security System, Validation** — in a plain ASP.NET Core Web API, project it as
 XAF views in a thin, multi-render-mode Blazor client that holds **zero** XAF engine references. No model or
 security logic is re-implemented anywhere; the client renders whatever the server projects.
 
-Everything here runs on **DevExpress 26.1.3 / .NET 10**, grounded on DevExpress's own **OutlookInspired** demo
+Everything here runs on **DevExpress 26.1 / .NET 10**, grounded on DevExpress's own **OutlookInspired** demo
 module — so with 26.1 and its demos installed, you can clone, build, and run this standalone, no customer
-database required.
+database required. The exact patch is pinned in the `.csproj` files (**26.1.4** at time of writing, and the
+version everything below was verified against); prose here says `26.1` because nothing in it depends on the
+patch level.
 
 ```
 ┌─────────────────────────┐        JSON over HTTP        ┌──────────────────────────────┐

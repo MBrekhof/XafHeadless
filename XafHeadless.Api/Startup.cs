@@ -24,7 +24,8 @@ using XafHeadless.JobServer.BusinessObjects;
 
 namespace XafHeadless.Api;
 
-// UI-less XAF Web API host over DevExpress's OutlookInspired demo module (26.1.3 / net10.0).
+// UI-less XAF Web API host over DevExpress's OutlookInspired demo module (26.1 / net10.0; the exact
+// DevExpress patch is pinned in the .csproj).
 //
 // ===================== TENANCY MODE: MULTI-TENANT (spike decision) =====================
 // The demo module is intrinsically multi-tenant: its DatabaseUpdate.Updater

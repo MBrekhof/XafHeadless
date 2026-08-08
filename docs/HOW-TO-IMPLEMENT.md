@@ -2,8 +2,9 @@
 
 A clean-start guide for XAF developers: stand up a UI-less XAF Web API that **projects** the Application
 Model and Security System as JSON, and render real ListViews/DetailViews in a thin, multi-render-mode Blazor
-client that holds **zero** XAF engine references. Everything here is verified against DevExpress **26.1.3 /
-.NET 10 / EF Core** and the installed 26.1 source; the running reference is this repo (`XafHeadless.Api`,
+client that holds **zero** XAF engine references. Everything here is verified against DevExpress **26.1 /
+.NET 10 / EF Core** (patch **26.1.4**, as pinned in the `.csproj` files) and the installed 26.1 source; the
+running reference is this repo (`XafHeadless.Api`,
 `XafHeadless.Components`, `XafHeadless.Web`/`.Web.Client`).
 
 **The one rule above all: project, don't re-implement.** The moment your metadata controller starts

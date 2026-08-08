@@ -10,8 +10,14 @@ host), so file them as **one ticket**. Everything here is reproduced live and tr
 **Title:** OData `$filter`/`$top`/`$skip` return wrong results (and `$select` throws) for
 `.WithSharedBusinessObjects()` types on a multi-tenant Web API host
 
-**Product / version:** DevExpress.ExpressApp.WebApi 26.1.3 (also `.ExpressApp.MultiTenancy.EFCore`,
-`.ExpressApp.EFCore`). Microsoft.AspNetCore.OData 9.3.2, EF Core 10, SQL Server / LocalDB, .NET 10.
+**Product / version:** reproduced on DevExpress.ExpressApp.WebApi **26.1.3** (also
+`.ExpressApp.MultiTenancy.EFCore`, `.ExpressApp.EFCore`). Microsoft.AspNetCore.OData 9.3.2, EF Core 10,
+SQL Server / LocalDB, .NET 10.
+
+> **Before filing, re-check on the current patch.** This repo moved to **26.1.4** on 2026-08-08 with the
+> `EnableConstantParameterization=false` workaround still in place, so whether 26.1.4 still exhibits the
+> defect is **untested** — the workaround would mask it either way. Support will ask, so temporarily remove
+> the `IApplicationModelConvention` and re-run the reproduction below before submitting.
 
 **Environment:** Non-visual XAF Web API host configured multi-tenant via
 `builder.AddMultiTenancy(...).WithHostDbContext(...).WithSharedBusinessObjects(sharedTypes).WithTenantResolver<TenantByEmailResolver>()`.

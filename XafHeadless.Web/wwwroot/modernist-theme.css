@@ -6,7 +6,9 @@
    flush-left everything.
 
    HOW THE DEVEXPRESS HALF WORKS (handoff step 3, verified against the installed
-   26.1.3 theme, not assumed): this app registers the Classic *Office White* theme,
+   theme CSS rather than assumed -- selectors and variable names read out of
+   office-white.bs5.min.css 26.1.3, then confirmed live on 26.1.4 by reading the
+   computed styles in a running browser): this app registers the Classic *Office White* theme,
    which ships DevExpress rules AND Bootstrap. Classic themes expose no public CSS
    variable API (only Fluent has --dxds-*), so the levers are the theme's own
    --dxbl-* variables, which it defines ON THE COMPONENT'S OWN SELECTOR -- e.g.

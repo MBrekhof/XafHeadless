@@ -21,7 +21,8 @@ using XafHeadless.JobServer.Services.Email;
 
 namespace XafHeadless.JobServer;
 
-// UI-less XAF host dedicated to running background jobs via Hangfire (26.1.3 / net10.0).
+// UI-less XAF host dedicated to running background jobs via Hangfire (26.1 / net10.0; the exact
+// DevExpress patch is pinned in the .csproj).
 //
 // Mirrors XafHeadless.Api\Startup.cs's proven AddXafWebApi wiring MINUS the data surface (no
 // ConfigureOptions(BusinessObject<>()), no OData, no command controllers — clients poll the Api's

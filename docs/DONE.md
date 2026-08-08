@@ -1,5 +1,58 @@
 # XafHeadless — DONE
 
+#### LOOKUP-001 + PH2-005: A dedicated lookup candidate endpoint, so the editor stops losing values (ID: 1232, ID: 541)
+
+**Done 2026-08-09.** Two card premises were wrong and the work is smaller and different because of it.
+
+**LOOKUP-001 said the editor was "display-only — degrades a reference to a badge". It is not, and has not
+been for some time.** `LookupEditor` already renders a `DxComboBox` with `ValueChanged` → `Set(v)`, writing
+through the same save path as any other editor; the badge appears only when the candidate fetch *fails*.
+So "make the lookup writable" was already done. What was actually broken was **where the candidates came
+from**.
+
+**The real defect, and it was live in this demo.** The editor fetched the target type's first 50 rows over
+OData. Employee has **51** rows, so one employee could never be picked. CustomerStore has **200**, so three
+quarters were unreachable. Worse: if the object a record *already referenced* fell outside that window, the
+combo rendered empty — an editor that cannot show its own current value, and one careless save away from
+clearing it. Raising the cap does not fix that; only asking the server for the current key does.
+
+**`api/lookup/{type}` (this is PH2-005, built with the consumer it was deferred for).** Read-only, secured,
+returning `{Key, Text}`:
+- **The current key is included unconditionally**, even when a search term would exclude it — the direct
+  fix for the disappearing value.
+- **Search is server-side**: `Contains()` over the display path, evaluated by the data store. XAF criteria
+  take dotted paths, so a two-hop display member searches on the text the user actually sees.
+- **The page is bounded at the database**, via `SetTopReturnedObjectsCount` — the documented bounded fetch
+  (dxdocs 26.1), which explicitly supports `EFCollection`, this host's provider.
+- **Text is resolved server-side** by `ViewMetadataProjector.ResolveDisplayPath`, extracted so the endpoint
+  and the projector share one walk. A second copy would drift, and a combo would then disagree with a grid
+  cell about what an object is called.
+- **No OData exposure needed.** This was PH2-005's original argument: reaching lookup targets over OData
+  meant widening `options.BusinessObject<T>()` per target. This reads through a secured `IObjectSpace`, so
+  a lookup target needs only the user's read permission — asked of XAF (`CanRead` → 403), never
+  re-implemented.
+
+Probed live before wiring the client: all **51** employees returned, `search=an` returned 13, CustomerStore
+resolved its two-hop path to city names, unknown type 404s.
+
+**Ceiling, deliberate:** the editor still filters the fetched page client-side. True server-side search
+means `DxComboBox.CustomData`, which speaks the DevExtreme.AspNet.Data `LoadResult` protocol and would add
+a package and reshape this endpoint's contract — tracked as **LOOKUP-002**, not left implied. Every lookup
+target in this model fits inside the endpoint's cap, so nothing is currently degraded by it.
+
+**A test-isolation bug worth recording.** `LookupEditorE2ETests` first clicked the first row of
+Order_ListView. It passed alone and failed in the full suite — sibling tests sort and group that view, so
+the row it landed on had no Employee, producing an empty combo that looks exactly like the defect. It now
+asks the API for an Order that *has* an employee and navigates straight to it. A fixture that also asserts
+something about row order is a fixture that fails for the wrong reason.
+
+Tests: `Components.Tests` **109/109** (+2), `Api.Tests` 72/72, E2E **11/12** — the one failure is
+`JobServerE2ETests` needing smtp4dev, unrelated. Confirmed by screenshot: the Employee combo reads
+"Barbara Banks". Build 0 warnings.
+
+Files: `LookupController.cs` (new), `ViewMetadataProjector.cs`, `ApiClient.cs`, `Contracts/LookupItem.cs`
+(new), `LookupEditor.razor`, `ApiClientTests.cs`, `LookupEditorE2ETests.cs` (new).
+
 #### BUG-008: A lookup display path that lands on an entity renders blank — resolve it to a primitive (ID: 1226)
 
 **Done 2026-08-09.** `Order_ListView`'s Store column had been blank on every row since the platform could

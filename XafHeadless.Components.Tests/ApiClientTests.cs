@@ -20,6 +20,25 @@ public class ApiClientTests {
             });
     }
 
+    // Records the URL the client actually built, so a test can assert on query parameters rather than
+    // trusting that they were sent.
+    sealed class CapturingHandler(HttpStatusCode status, string body) : HttpMessageHandler {
+        public string? LastUrl { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
+            LastUrl = request.RequestUri?.ToString();
+            return Task.FromResult(new HttpResponseMessage(status) {
+                Content = new StringContent(body), RequestMessage = request
+            });
+        }
+    }
+
+    static ApiClient ClientWith(HttpMessageHandler handler) {
+        var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5200/") };
+        var auth = new AuthState();
+        auth.SetToken("a-token");
+        return new ApiClient(http, auth, NullLogger<ApiClient>.Instance);
+    }
+
     static ApiClient Client(HttpStatusCode status, string body) {
         var http = new HttpClient(new StubHandler(status, body)) {
             BaseAddress = new Uri("http://localhost:5200/")
@@ -27,6 +46,35 @@ public class ApiClientTests {
         var auth = new AuthState();
         auth.SetToken("a-token");
         return new ApiClient(http, auth, NullLogger<ApiClient>.Instance);
+    }
+
+    // ---- PH2-005 / LOOKUP-001: the lookup candidate feed ----
+
+    // The `key` parameter is the whole point: it asks the server to include the object the record ALREADY
+    // references even when it falls outside the page or the search. Without it an editor silently drops an
+    // existing value, which is exactly what the old OData top-50 fetch did (Employee has 51 rows).
+    [TestMethod]
+    public async Task GetLookupItemsAsync_passes_the_current_key_so_the_server_can_include_it() {
+        var handler = new CapturingHandler(HttpStatusCode.OK,
+            """[{"Key":"k1","Text":"Amelia Harper"}]""");
+        var client = ClientWith(handler);
+
+        var items = await client.GetLookupItemsAsync("Employee", search: "har", key: "k1", top: 25);
+
+        Assert.AreEqual(1, items.Length);
+        Assert.AreEqual("Amelia Harper", items[0].Text);
+        StringAssert.Contains(handler.LastUrl!, "api/lookup/Employee", "wrong endpoint");
+        StringAssert.Contains(handler.LastUrl!, "key=k1", "the current key must reach the server");
+        StringAssert.Contains(handler.LastUrl!, "search=har", "the search term must reach the server");
+        StringAssert.Contains(handler.LastUrl!, "top=25");
+    }
+
+    // A lookup that cannot load its candidates must not take the whole form down -- every other binding in
+    // this client degrades the same way.
+    [TestMethod]
+    public async Task GetLookupItemsAsync_degrades_to_empty_rather_than_throwing() {
+        var client = Client(HttpStatusCode.InternalServerError, "boom");
+        Assert.AreEqual(0, (await client.GetLookupItemsAsync("Employee")).Length);
     }
 
     // ---- CRUD-001: the client half of GAP-003 ----

@@ -292,6 +292,22 @@ public class ViewMetadataProjector {
         // The `visited` set is a cycle guard: two types whose default properties point at each other
         // would otherwise loop forever. On a cycle the walk stops on a reference, ClassifyDataType says
         // "lookup", and GRID-005's ceiling refuses to sort it -- the same honest degradation as before.
+        var (path, landed) = ResolveDisplayPath(targetInfo);
+        return new LookupMetadata(targetInfo.Type.Name, targetInfo.KeyMember.Name,
+            path, ClassifyDataType(landed));
+    }
+
+    // BUG-008 / PH2-005: THE display path for a lookup target, and the member it lands on. Shared, because
+    // two places need the identical answer and a second copy would drift: the projector puts the path on the
+    // wire, and LookupController evaluates it server-side to build candidate text. The path is also a valid
+    // XAF criteria path and a valid OData nav path, which is what makes both uses possible.
+    //
+    // Walks the default-property chain because [XafDefaultProperty] frequently points at ANOTHER reference
+    // (CustomerStore's is Emblem, an entity), and stopping at one hop yields a path resolving to an object --
+    // the permanently blank column BUG-008 fixed. `visited` guards a cycle: two types whose default
+    // properties point at each other stop the walk on a reference, which callers then treat as unrenderable
+    // / unsortable rather than looping forever.
+    internal static (string Path, IMemberInfo Landed) ResolveDisplayPath(ITypeInfo targetInfo) {
         var segments = new List<string>();
         var display = targetInfo.DefaultMember ?? targetInfo.KeyMember;
         var visited = new HashSet<Type> { targetInfo.Type };
@@ -301,8 +317,7 @@ public class ViewMetadataProjector {
             display = next.DefaultMember ?? next.KeyMember;
         }
         segments.Add(display.Name);
-        return new LookupMetadata(targetInfo.Type.Name, targetInfo.KeyMember.Name,
-            string.Join('.', segments), ClassifyDataType(display));
+        return (string.Join('.', segments), display);
     }
 
     static List<EnumValueMetadata>? ProjectEnum(IMemberInfo mi) {

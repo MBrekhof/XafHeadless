@@ -1,12 +1,21 @@
 @inherits EditorComponentBase
 @inject ApiClient Api
 
-@* DxComboBox over the lookup target type's first 50 rows (api/odata/{ObjectType}?$top=50, no $select
-   -- honours the model-vs-EDM rule) with AutoSearch text filtering. Current is the FK value from the
-   expanded nav object; it preselects only when that row is within the fetched 50.
-   ponytail: 50-row cap + no display for out-of-window keys is fine for the POC; a keyed lookup fetch
-   would be the upgrade. A failed fetch (a member that isn't an expandable/queryable EDM nav) degrades
-   to showing the raw key, never crashing the form. *@
+@* DxComboBox over api/lookup/{ObjectType} (PH2-005 / LOOKUP-001), the dedicated read-only candidate feed.
+   It replaced a straight OData fetch of the target type's first 50 rows, which had two defects that were
+   live in this very demo: Employee has 51 rows so one employee could never be picked, and if the object a
+   record ALREADY referenced fell outside that window the combo rendered blank -- the editor could silently
+   drop an existing value. Passing the current key makes the server include it unconditionally.
+
+   Text comes from the SERVER, which walks the same display path the projector puts on the wire, so a combo
+   and a grid cell agree on what an object is called (BUG-008).
+
+   CEILING: search is still client-side over the fetched page. True server-side search means binding
+   DxComboBox.CustomData, which speaks the DevExtreme.AspNet.Data LoadResult protocol (dxdocs, 26.1) and
+   would change this endpoint's contract and add a package -- see LOOKUP-002. Until then the page is capped
+   at the endpoint's own maximum, which covers every lookup target in this model.
+
+   A failed fetch degrades to the raw key plus a badge, never crashing the form. *@
 @if (loadError is not null) {
     <span class="text-muted">@Current</span>
     <span class="badge bg-secondary ms-2">lookup unavailable</span>
@@ -25,47 +34,14 @@
 }
 
 @code {
-    public record LookupItem(object? Key, string Text);
-    List<LookupItem> items = new();
+    LookupItem[] items = [];
     string? loadError;
 
     protected override async Task OnInitializedAsync() {
         if (Node.Lookup is not { } lk) { loadError = "no lookup metadata"; return; }
-        try {
-            // BUG-008: DisplayMember is a PATH, not necessarily a single member -- XAF's default property
-            // often points at another reference, so it can be e.g. "Emblem.CityName". A deeper path needs
-            // its nav property expanded or the payload simply won't carry it.
-            var hops = lk.DisplayMember.Split('.');
-            var expand = hops.Length > 1 ? ExpandFor(hops) : null;
-            var page = await Api.GetPageAsync(lk.ObjectType, new ODataQuery(0, 50, null, null, null, expand));
-            items = page.Rows
-                .Select(r => new LookupItem(Scalar(r, lk.KeyMember), Text(r, hops)))
-                .ToList();
-        } catch (Exception ex) {
-            loadError = ex.Message;
-        }
+        items = await Api.GetLookupItemsAsync(lk.ObjectType, key: Current?.ToString());
+        // An empty feed for a member that HAS a value means the candidates failed to load; showing the raw
+        // key beats showing an empty combo that looks like "no value set".
+        if (items.Length == 0 && Current is not null) loadError = "candidates unavailable";
     }
-
-    static object? Scalar(System.Text.Json.JsonElement r, string member) =>
-        r.TryGetProperty(member, out var el) && el.ValueKind != System.Text.Json.JsonValueKind.Null
-            ? (el.ValueKind == System.Text.Json.JsonValueKind.Number ? el.GetDecimal() : (object?)el.ToString())
-            : null;
-
-    // Walks the display path one hop at a time; a missing hop yields "" rather than throwing, matching
-    // how every other binding here degrades when the model and the EDM disagree.
-    static string Text(System.Text.Json.JsonElement r, string[] hops) {
-        var el = r;
-        foreach (var hop in hops) {
-            if (el.ValueKind != System.Text.Json.JsonValueKind.Object
-                || !el.TryGetProperty(hop, out var next)) return "";
-            el = next;
-        }
-        return el.ValueKind == System.Text.Json.JsonValueKind.Null ? "" : el.ToString();
-    }
-
-    // "Emblem","CityName" -> Emblem($select=CityName); deeper paths nest, mirroring GridBinding's
-    // ExpandClause so the two cannot drift apart.
-    static string ExpandFor(string[] hops) => hops.Length == 2
-        ? $"{hops[0]}($select={hops[1]})"
-        : $"{hops[0]}($expand={ExpandFor(hops[1..])})";
 }

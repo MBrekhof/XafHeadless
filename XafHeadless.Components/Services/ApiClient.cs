@@ -81,6 +81,28 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return buckets.EnumerateArray().Select(e => e.Clone()).ToArray();
     }
 
+    // PH2-005 / LOOKUP-001: the lookup editor's candidate feed. `key` asks the server to include the object
+    // the record ALREADY references even when it falls outside the page or the search -- without it an
+    // editor can silently drop an existing value, which is what the old OData top-50 fetch did (Employee
+    // has 51 rows). Degrades to an empty list rather than throwing: a lookup that cannot load its
+    // candidates must not take the whole form down with it.
+    public async Task<LookupItem[]> GetLookupItemsAsync(string type, string? search = null,
+            string? key = null, int? top = null) {
+        ApplyAuthHeader();
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(search)) query.Add($"search={Uri.EscapeDataString(search)}");
+        if (!string.IsNullOrWhiteSpace(key)) query.Add($"key={Uri.EscapeDataString(key)}");
+        if (top is not null) query.Add($"top={top}");
+        var url = $"api/lookup/{type}{(query.Count == 0 ? "" : "?" + string.Join("&", query))}";
+        var response = await http.GetAsync(url);
+        if (CheckUnauthorized(response)) return [];
+        if (!response.IsSuccessStatusCode) {
+            LogDegraded(response, $"lookup candidates for '{type}' not loaded");
+            return [];
+        }
+        return await response.Content.ReadFromJsonAsync<LookupItem[]>() ?? [];
+    }
+
     // CRUD-001: the client half of GAP-003. POST api/save/{type} carries NO key -- the server calls
     // CreateObject, applies the members through the same gate as an update, commits with validation, and
     // answers 201 { key } with the key IT generated (BaseObject.ID, a Guid). The caller needs that key to

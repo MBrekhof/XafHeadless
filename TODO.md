@@ -64,10 +64,17 @@ LOOKUP-001 inherits.
 reusing proven server capability (create endpoint, `$apply` aggregation, report renderer) and defers those
 needing a design decision first (pivot aggregation, file storage, export ownership).
 
-**Progress:** ~~CRUD-001~~ and ~~BUG-008~~ both done 2026-08-09 (`docs/DONE.md`). BUG-008 was taken out of
-order, ahead of LOOKUP-001, because a picker that could not render a display string for the very lookups
-BUG-008 describes would have shipped the same blank-value defect into a second place — and `LookupEditor`
-was in fact one of the two consumers the fix had to touch. **Next: LOOKUP-001**, now unblocked.
+**Progress (2026-08-09):** ~~CRUD-001~~, ~~BUG-008~~, ~~LOOKUP-001~~ and ~~PH2-005~~ done — see
+`docs/DONE.md`. BUG-008 was taken out of order, ahead of LOOKUP-001, because a picker that could not render
+a display string for the very lookups BUG-008 describes would have shipped the same blank-value defect into
+a second place; `LookupEditor` was in fact one of the two consumers that fix had to touch.
+
+**Two card premises turned out to be wrong, which is worth noting for the ones still open:** LOOKUP-001
+described an editor that was already write-capable, and BUG-006 (via GRID-003) had misidentified an entity
+reference as a blob. Both were written from reading the *records* rather than the *code*. The cards below
+were written the same way — treat their claims as leads to verify first, not as findings.
+
+**Next: CHART-001**, whose `$apply` aggregation path is already wire-proven.
 
 **Standing decisions that apply to every card here, so they are stated once:**
 - **The server holds the data.** No feature may pull an unbounded row set to the client. Order is 55k rows;
@@ -82,23 +89,30 @@ was in fact one of the two consumers the fix had to touch. **Next: LOOKUP-001**,
 
 _CRUD-001 (new-object creation UI — `/new/{ViewId}` route, `ApiClient.CreateAsync` reading the server-generated key off the 201, New button gated on the projected `Allow.New`) done 2026-08-09 — see `docs/DONE.md`._
 
-#### LOOKUP-001: Write-capable lookup editor (pick an existing related object) (ID: 1232)
+_LOOKUP-001 + PH2-005 (a dedicated `api/lookup/{type}` candidate endpoint — current key always
+included, server-side search, bounded at the database, text resolved by the shared display-path walk)
+done 2026-08-09 — see `docs/DONE.md`. **Both card premises were wrong:** the editor was already
+write-capable, and the real defect was the 50-row OData fetch losing the current value (Employee has
+51 rows). Remaining ceiling — server-side search *in the combo* — is [[LOOKUP-002]] below._
 
-**Named as the top gap by MIG-002 (558) and the missing consumer PH2-005 (541) was deferred waiting for.**
-`LookupEditor.razor` is display-only — it degrades a reference to a badge, so a DetailView cannot change
-which object a reference points at. Reference *writes* already work server-side (GAP-001 resolves keys via
-`IObjectSpace.GetObjectByKey`), so this is the client editor plus a candidate feed.
+#### LOOKUP-002: Server-side search in the lookup editor (DxComboBox CustomData) (ID: 1240)
 
-- **The candidate feed** is exactly PH2-005's `/api/lookup/{type}` read-only endpoint, deferred as YAGNI
-  *because this editor did not exist*. Build them together — that closes 541 honestly instead of leaving it
-  deferred forever, and avoids widening `options.BusinessObject<T>()` per lookup target.
-- **The editor** — a searchable dropdown bound to the projected `LookupMetadata`, writing the key back
-  through the existing save path.
+**The ceiling LOOKUP-001 stopped at, stated rather than implied.** `api/lookup/{type}` already supports
+server-side search — `Contains()` over the display path, evaluated by the data store, verified live (a
+search for "an" over 51 employees returned 13). The **editor** does not use it: `DxComboBox` is bound to
+`Data`, so its AutoSearch filters only the page already fetched. Correct for every lookup target in this
+model (largest is CustomerStore at 200, inside the endpoint's cap), wrong for a target with thousands of
+rows where the right candidate may not be in the page being searched.
 
-**[[BUG-008]] interaction:** a lookup whose display member resolves to an entity has no display string, so
-this editor would show blank entries for exactly those columns. Fix BUG-008 first, or scope the picker to
-lookups with a primitive display member and say so. Unblocks GAP-010's Link picker. **Create-new-from-lookup
-stays out of scope** (owner: not important). Sizing: medium.
+**What it takes** (verified against dxdocs 26.1): `DxComboBox.CustomData` is the documented remote-data
+binding and speaks the **DevExtreme.AspNet.Data `LoadResult` protocol** — the delegate takes a
+`DataSourceLoadOptionsBase` and returns `Task<LoadResult>`. So it adds a package and changes this
+endpoint from a plain array to a `LoadResult` shape (or adds a second action that speaks it). Do it when a
+real target app has a large lookup target; not worth reshaping a working contract before then.
+
+Documented caveat to verify when doing it: with `OnDemand` load mode plus virtual scrolling, if `TData`
+and `TValue` differ the component "may display the selected item's text incorrectly on page load" — which
+is exactly the bug LOOKUP-001 fixed, so re-prove the current-value display rather than assuming it.
 
 #### CHART-001: Project and render XAF chart views (ID: 1228)
 
@@ -329,23 +343,9 @@ against dxdocs / installed 26.1 source, not memory.
 _PH2-003 (app-level XAFML diffs — **decided 2026-07-12**: module-level model IS the platform contract;
 app-level customizations out of scope, no code) closed as a decision — see `docs/DONE.md`._
 
-#### PH2-005: Dedicated read-only lookup endpoint (ID: 541)
-
-Each lookup target currently requires widening `options.BusinessObject<T>()` exposure. Before
-SEC-001, that widening grew the *unguarded write surface* too — now that OData writes are middleware-
-blocked host-wide (405), that specific risk is closed; this item is now purely about scalability (a
-`/api/lookup/{type}` read-only endpoint scales better than growing the general OData exposure list
-per lookup target).
-
-**DEFERRED 2026-07-12 (autonomous loop) — assessed, no current consumer (YAGNI).** A dedicated
-`/api/lookup/{type}` endpoint would feed a lookup *dropdown editor* (fetching the list of selectable
-options). That editor does not exist: the client's lookup rendering is **display-only** (LookupEditor
-degrades to a badge — Task 9/10), reference *display* works via `$expand` on the parent, and GAP-001's
-reference *writes* resolve keys in-process via `IObjectSpace.GetObjectByKey` (which doesn't even need the
-target OData-exposed). So nothing currently needs this endpoint, and the exposure-list approach works.
-Build it together with a write-capable lookup-dropdown editor (a future client feature) — at that point it
-has a real consumer. Not worth building speculatively now; recorded here so it's a conscious deferral, not
-an oversight.
+_PH2-005 (dedicated read-only lookup endpoint) done 2026-08-09 as part of LOOKUP-001 — see
+`docs/DONE.md`. It was deferred as YAGNI in 2026-07-12 for want of a consumer; the write-capable
+lookup editor was that consumer, so the two were built together._
 
 _P2 status: **GAP-002 / GAP-004 / GAP-005 / GAP-007 / GAP-009** done (see `docs/DONE.md`); **PH2-003** closed
 as a decision (moved to `docs/DONE.md`); **PH2-005** deferred (YAGNI, owner-reviewed). **Still open above:**

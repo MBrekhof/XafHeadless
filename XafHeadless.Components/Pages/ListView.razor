@@ -10,7 +10,7 @@
    restored from sessionStorage on the first interactive render. The /login redirect is centralized in
    MainLayout. *@
 <AuthGuard>
-    <XafListView ViewId="@ViewId" OnRowSelected="OnRowSelected" />
+    <XafListView ViewId="@ViewId" OnRowSelected="OnRowSelected" OnNewRequested="OnNewRequested" />
 </AuthGuard>
 
 @code {
@@ -19,5 +19,12 @@
     // DetailViewId = ViewId with "_ListView" -> "_DetailView", per the brief. /detail/... doesn't
     // exist yet (Task 9) -- a 404/placeholder there is expected for this task's verification.
     void OnRowSelected(string key) =>
-        Navigation.NavigateTo($"/detail/{ViewId.Replace("_ListView", "_DetailView")}/{key}");
+        Navigation.NavigateTo($"/detail/{DetailViewId}/{key}");
+
+    // CRUD-001: New opens the same DetailView with no key. Only the PAGE wires this -- a nested list
+    // inside a DetailView leaves OnNewRequested unbound, so no New button appears there (creating a child
+    // in place is CRUD-002, and it has to go through the master's aggregated-collection rules).
+    void OnNewRequested() => Navigation.NavigateTo($"/new/{DetailViewId}");
+
+    string DetailViewId => ViewId.Replace("_ListView", "_DetailView");
 }

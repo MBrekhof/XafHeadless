@@ -1,4 +1,8 @@
 @page "/detail/{ViewId}/{ObjectKey}"
+@* CRUD-001: creating an object is the SAME DetailView with no key yet. A separate literal route rather
+   than a magic ObjectKey value ("new"), so it can never collide with a real key. ObjectKey stays "" here,
+   and XafDetailView treats an empty key as new-object mode. *@
+@page "/new/{ViewId}"
 
 <PageTitle>@ViewId</PageTitle>
 

@@ -81,20 +81,40 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return buckets.EnumerateArray().Select(e => e.Clone()).ToArray();
     }
 
+    // CRUD-001: the client half of GAP-003. POST api/save/{type} carries NO key -- the server calls
+    // CreateObject, applies the members through the same gate as an update, commits with validation, and
+    // answers 201 { key } with the key IT generated (BaseObject.ID, a Guid). The caller needs that key to
+    // navigate to the object it just made, so it is carried on SaveOutcome rather than discarded.
+    public async Task<SaveOutcome> CreateAsync(string entity, Dictionary<string, object?> values) {
+        ApplyAuthHeader();
+        var response = await http.PostAsJsonAsync($"api/save/{entity}", values);
+        if (CheckUnauthorized(response)) return new SaveOutcome(false, new(), ["Not authorized."]);
+        if (!response.IsSuccessStatusCode) return await FailureOutcomeAsync(response);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return new SaveOutcome(true, new(), [],
+            created.TryGetProperty("key", out var k) ? k.GetString() : null);
+    }
+
     public async Task<SaveOutcome> SaveAsync(string entity, string key, Dictionary<string, object?> changes) {
         ApplyAuthHeader();
         var response = await http.PostAsJsonAsync($"api/save/{entity}/{key}", changes);
         if (CheckUnauthorized(response)) return new SaveOutcome(false, new(), ["Not authorized."]);
         if (response.IsSuccessStatusCode) return new SaveOutcome(true, new(), []);
-        if (response.StatusCode == HttpStatusCode.UnprocessableEntity) {
-            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-            var memberErrors = body.GetProperty("MemberErrors").EnumerateObject()
-                .ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
-            var messages = body.GetProperty("Messages").EnumerateArray()
-                .Select(m => m.GetString() ?? "").ToArray();
-            return new SaveOutcome(false, memberErrors, messages);
-        }
-        return new SaveOutcome(false, new(), [$"Unexpected status {(int)response.StatusCode}."]);
+        return await FailureOutcomeAsync(response);
+    }
+
+    // The failure contract BOTH write paths share (docs/notes/save-contract.md): a 422 carries
+    // MemberErrors keyed by member name, for display at the offending editor, plus whole-object Messages.
+    // Anything else is an unexpected status and says so rather than pretending to be a validation result.
+    static async Task<SaveOutcome> FailureOutcomeAsync(HttpResponseMessage response) {
+        if (response.StatusCode != HttpStatusCode.UnprocessableEntity)
+            return new SaveOutcome(false, new(), [$"Unexpected status {(int)response.StatusCode}."]);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var memberErrors = body.GetProperty("MemberErrors").EnumerateObject()
+            .ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
+        var messages = body.GetProperty("Messages").EnumerateArray()
+            .Select(m => m.GetString() ?? "").ToArray();
+        return new SaveOutcome(false, memberErrors, messages);
     }
 
     public async Task<CommandResult> ExecuteCommandAsync(string id, string[] keys) {

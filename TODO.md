@@ -103,6 +103,10 @@ LOOKUP-001 inherits.
 reusing proven server capability (create endpoint, `$apply` aggregation, report renderer) and defers those
 needing a design decision first (pivot aggregation, file storage, export ownership).
 
+**Progress:** ~~CRUD-001~~ done 2026-08-09 (`docs/DONE.md`). Next: LOOKUP-001, which should be preceded by
+or bundled with [[BUG-008]] — a picker that cannot render a display string for the very lookups BUG-008
+describes would ship the same blank-value defect into a second place.
+
 **Standing decisions that apply to every card here, so they are stated once:**
 - **The server holds the data.** No feature may pull an unbounded row set to the client. Order is 55k rows;
   GRID-002 set the precedent with `$apply` and a `RowCap` hybrid, and anything aggregating (chart, pivot,
@@ -114,18 +118,7 @@ needing a design decision first (pivot aggregation, file storage, export ownersh
 - **Every gap gets a card before it gets code**, cited in TODO.md so board and file cannot drift (the
   2026-08-08 backfill exists because that stopped happening once already).
 
-#### CRUD-001: New-object creation UI (the client half of GAP-003) (ID: 1231)
-
-**The server half is done and proven** — GAP-003 (card 544) shipped the create endpoint with the 422
-validation contract. There is no client UI to reach it: the list view offers no New action and there is no
-blank DetailView form.
-
-Scope: a New action on `XafListView`, a DetailView bound to an unsaved object, save through the existing
-create endpoint, and honest handling of the **422 validation response** the save contract already defines
-(`docs/notes/save-contract.md`) — field-level messages next to the editors, not a toast.
-
-Smallest genuinely useful increment toward feature-complete CRUD, because it reuses the shipped editor map,
-layout renderer and endpoint. First implementation target of the push. Sizing: small-to-medium.
+_CRUD-001 (new-object creation UI — `/new/{ViewId}` route, `ApiClient.CreateAsync` reading the server-generated key off the 201, New button gated on the projected `Allow.New`) done 2026-08-09 — see `docs/DONE.md`._
 
 #### LOOKUP-001: Write-capable lookup editor (pick an existing related object) (ID: 1232)
 

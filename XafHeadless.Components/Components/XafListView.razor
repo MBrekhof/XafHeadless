@@ -26,6 +26,17 @@
 } else if (rows is null && serverData is null) {
     <em>View has no columns.</em>
 } else {
+    @* CRUD-001: New is gated on the SERVER-projected Allow.New, which is already model AND security
+       (ProjectListView rule 2: list.AllowNew && security.CanCreate) -- so a client can't re-enable it,
+       and a role without create permission simply never sees the button. OnNewRequested.HasDelegate
+       keeps it opt-in: only the list PAGE wires it, so nested lists inside a DetailView don't sprout a
+       New that would bypass their master's aggregated-collection rules (that is CRUD-002). *@
+    @if (meta?.Allow.New == true && OnNewRequested.HasDelegate) {
+        <div class="xaf-listbar mb-2">
+            <DxButton Text="New" Click="@(() => OnNewRequested.InvokeAsync())"
+                      RenderStyle="ButtonRenderStyle.Primary" />
+        </div>
+    }
     @* DxGrid binds either the in-memory rows or the GridCustomDataSource-based ODataGridDataSource
        (dxdocs DevExpress.Blazor.GridCustomDataSource, 26.1: the documented remote/on-demand binding,
        WASM-compatible). ContextMenus=Header is the column-header sub-menu; its grouping commands
@@ -79,6 +90,8 @@
     [Parameter] public string? MasterKey { get; set; }
     [Parameter] public string? MasterKeyName { get; set; }   // master type's own key member (e.g. "ID")
     [Parameter] public EventCallback<string> OnRowSelected { get; set; }
+    // CRUD-001: left unbound by nested lists on purpose -- see the New button's gate above.
+    [Parameter] public EventCallback OnNewRequested { get; set; }
 
     // GRID-001: RowCap bounds the in-memory load so a large view (Order = 55k rows) can't hang the browser.
     // Client-side grouping needs all rows in memory; we load at most this many and flag truncation in the UI.

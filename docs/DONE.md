@@ -1,5 +1,44 @@
 # XafHeadless — DONE
 
+#### CRUD-001: New-object creation UI — the client half of GAP-003 (ID: 1231)
+
+**Done 2026-08-09.** GAP-003 proved the create endpoint server-side on 2026-07-12, and nothing in the UI
+could reach it: no New action, no blank form, and `ApiClient` could only update an *existing* key.
+
+- **`ApiClient.CreateAsync`** posts to `api/save/{type}` with no key and reads the **201 `{ key }`** the
+  server answers with. That key is server-generated (`CreateObject`/`CommitChanges` assign it), so the
+  client must get it back to navigate to what it just made; it rides on `SaveOutcome.Key`, added last with
+  a default so every existing 3-arg construction kept compiling. The 422 parsing `SaveAsync` already did
+  is now one shared `FailureOutcomeAsync` instead of two copies.
+- **Route `/new/{ViewId}`** as a second `@page` on `DetailPage` — a literal route, *not* a magic ObjectKey
+  value like `"new"`, so it can never collide with a real key. An empty `ObjectKey` is the new-object signal.
+- **`XafDetailView`** skips the OData fetch when there is no key (nothing exists to fetch), seeds every
+  laid-out member as null so editors render empty and `changes` starts clean, enables Save with no edits
+  (an all-defaults object can be valid, and the **server** decides), and hides the per-object commands,
+  which would post an ObjectKey that does not exist yet. A successful create navigates to
+  `/detail/{ViewId}/{key}`.
+- **New button** on `XafListView`, gated on the server-projected `Allow.New` — already model ∩ security
+  (`list.AllowNew && security.CanCreate`), so a client cannot re-enable it and a role without create
+  permission never sees it. Also gated on `OnNewRequested.HasDelegate`, which only the list *page* binds:
+  a nested list inside a DetailView must not sprout a New that bypasses its master's aggregated-collection
+  rules (that is CRUD-002).
+
+**Both outcomes were probed live before the tests were written**, not assumed: `POST api/save/Order {}`
+answers **201** (Order has no required members) while `POST api/save/Employee {}` answers **422** with six
+MemberErrors. So `NewObjectE2ETests` covers success-and-navigate on Order and field-level validation on
+Employee — and the Employee case also pins that a rejected create does **not** navigate away from the form
+the user still has to fix. The Order test deletes the row it creates.
+
+Unlike GRID-005's E2E, these needed no revert-to-prove step: they assert on a route and a button that did
+not exist before this change, so they could not have passed vacuously.
+
+Tests: `Components.Tests` **104/104** (+2 on `CreateAsync`, written RED first), `Api.Tests` 72/72, E2E
+**10/11** — the one failure is `JobServerE2ETests`, which needs smtp4dev (MailKit connection refused) and
+is unrelated to this work. Build 0 warnings.
+
+Files: `ApiClient.cs`, `SaveOutcome.cs`, `DetailPage.razor`, `ListView.razor`, `XafListView.razor`,
+`XafDetailView.razor`, `ApiClientTests.cs`, `NewObjectE2ETests.cs`.
+
 #### GRID-005: Refuse an impossible lookup sort up front instead of recovering after the click (ID: 1222)
 
 **Done 2026-08-08.** Implements the upgrade path BUG-005 recorded. `LookupMetadata` projected

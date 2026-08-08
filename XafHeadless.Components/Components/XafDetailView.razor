@@ -11,6 +11,7 @@
    global trigger that ignores ObjectKeys, so showing it on every DetailView (the OrderSummary wart)
    would be semantically wrong here. Empty ObjectKeys, per the command's own design. *@
 @inject ApiClient Api
+@inject NavigationManager Navigation
 
 @if (loading) {
     <em>Loading…</em>
@@ -21,7 +22,7 @@
 } else {
     <div class="xaf-detail">
         <div class="d-flex align-items-center mb-2">
-            <h3 class="me-3 mb-0">@meta.Caption</h3>
+            <h3 class="me-3 mb-0">@(IsNew ? $"New {meta.Caption}" : meta.Caption)</h3>
             <span class="text-muted">@ObjectKey</span>
         </div>
 
@@ -44,13 +45,20 @@
         <div class="xaf-savebar mb-3">
             @* Modernist: Save is THE primary command -- solid accent; every other command is
                secondary (transparent, 1px divider border) via the theme. *@
-            <DxButton Text="Save" Click="OnSave" Enabled="@(changes.Count > 0 && !saving)"
+            @* CRUD-001: a NEW object saves even with no edits -- an all-defaults object can be perfectly
+               valid, and the server is the one that decides (it answers 422 if it isn't). An existing
+               object still needs a change to be worth a round trip. *@
+            <DxButton Text="Save" Click="OnSave" Enabled="@((IsNew || changes.Count > 0) && !saving)"
                       RenderStyle="ButtonRenderStyle.Primary" />
             <DxButton Text="Cancel" Click="OnCancel" RenderStyle="ButtonRenderStyle.Secondary"
-                      Enabled="@(changes.Count > 0)" />
-            <DxButton Text="Order summary" Click="OnOrderSummary" RenderStyle="ButtonRenderStyle.Info"
-                      Enabled="@(!commandRunning)" />
-            @if (ViewId == JobDefinitionDetailViewId) {
+                      Enabled="@(IsNew || changes.Count > 0)" />
+            @* Per-object commands need an object that EXISTS -- both post the current ObjectKey, which is
+               empty until the create lands, so they stay hidden in new mode. *@
+            @if (!IsNew) {
+                <DxButton Text="Order summary" Click="OnOrderSummary" RenderStyle="ButtonRenderStyle.Info"
+                          Enabled="@(!commandRunning)" />
+            }
+            @if (!IsNew && ViewId == JobDefinitionDetailViewId) {
                 <DxButton Text="Run Now" Click="OnRunNow" RenderStyle="ButtonRenderStyle.Info"
                           Enabled="@(!commandRunning)" />
             }
@@ -80,6 +88,10 @@
     List<string> messages = new();
     DetailViewState? state;
     bool loading = true, saving, saved, commandRunning;
+    // CRUD-001: no key yet == an object that does not exist on the server yet. The /new/{ViewId} route
+    // supplies no ObjectKey, so an empty key IS the new-object signal -- no sentinel value to collide
+    // with a real key.
+    bool IsNew => string.IsNullOrEmpty(ObjectKey);
     string? error;
     string? loadedFor;
     string? commandMessage;
@@ -104,6 +116,18 @@
             meta = await Api.GetViewAsync(ViewId)
                 ?? throw new InvalidOperationException($"metadata request for '{ViewId}' failed");
             if (meta.Layout is null) return;
+
+            // CRUD-001: there is nothing to fetch for an object that does not exist yet. Seed every laid-out
+            // member as null so the editors render empty and `changes` starts clean -- the create posts only
+            // what the user actually typed, exactly as the update path posts only what changed.
+            if (IsNew) {
+                values = DetailBinding.AllItems(meta.Layout)
+                    .Where(i => i.Member is not null)
+                    .GroupBy(i => i.Member!)
+                    .ToDictionary(g => g.Key, _ => (object?)null);
+                BuildState();
+                return;
+            }
 
             var keyMember = meta.KeyMember;   // PH2-001: server-projected key, no client-side guessing
             var filter = DetailBinding.KeyFilter(keyMember, ObjectKey);
@@ -146,8 +170,22 @@
     async Task OnSave() {
         saving = true;
         saved = false;
-        var outcome = await Api.SaveAsync(meta!.ObjectType, ObjectKey, new Dictionary<string, object?>(changes));
+        var payload = new Dictionary<string, object?>(changes);
+        var outcome = IsNew
+            ? await Api.CreateAsync(meta!.ObjectType, payload)
+            : await Api.SaveAsync(meta!.ObjectType, ObjectKey, payload);
         saving = false;
+        // A successful create leaves this component sitting on /new with an object that now exists, so
+        // navigate to the real object. Its key came back on the 201 -- the client never generated one.
+        if (outcome.Success && IsNew) {
+            if (outcome.Key is null) {
+                messages = ["Created, but the server returned no key — reopen it from the list."];
+                BuildState();
+                return;
+            }
+            Navigation.NavigateTo($"/detail/{ViewId}/{outcome.Key}");
+            return;
+        }
         if (outcome.Success) {
             saved = true;
             loadedFor = null;                       // force a full reload of fresh server values

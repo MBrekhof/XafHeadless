@@ -29,6 +29,39 @@ public class ApiClientTests {
         return new ApiClient(http, auth, NullLogger<ApiClient>.Instance);
     }
 
+    // ---- CRUD-001: the client half of GAP-003 ----
+
+    // The create endpoint (POST api/save/{type}) shipped and was proven server-side on 2026-07-12, but no
+    // client method ever reached it -- ApiClient could only update an EXISTING key. The server answers 201
+    // with the key it generated (the client never sends one; CreateObject/CommitChanges assign it), and the
+    // caller needs that key to navigate to the object it just created.
+    [TestMethod]
+    public async Task CreateAsync_returns_the_server_generated_key() {
+        var client = Client(HttpStatusCode.Created, """{"key":"3f2504e0-4f89-11d3-9a0c-0305e82c3301"}""");
+
+        var outcome = await client.CreateAsync("Order",
+            new Dictionary<string, object?> { ["InvoiceNumber"] = "0100001" });
+
+        Assert.IsTrue(outcome.Success);
+        Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", outcome.Key,
+            "the caller navigates to the object it just made, so the server-generated key must survive the round trip");
+    }
+
+    // Same 422 contract SaveAsync already honours (docs/notes/save-contract.md): a create rejected by
+    // validation must come back with field-level errors, not a bare failure.
+    [TestMethod]
+    public async Task CreateAsync_surfaces_member_errors_on_422() {
+        var client = Client(HttpStatusCode.UnprocessableEntity,
+            """{"MemberErrors":{"FirstName":"First Name must not be empty."},"Messages":["Validation failed."]}""");
+
+        var outcome = await client.CreateAsync("Employee", new Dictionary<string, object?>());
+
+        Assert.IsFalse(outcome.Success);
+        Assert.IsNull(outcome.Key, "a rejected create has no key to navigate to");
+        Assert.AreEqual("First Name must not be empty.", outcome.MemberErrors["FirstName"]);
+        CollectionAssert.Contains(outcome.Messages, "Validation failed.");
+    }
+
     [TestMethod]
     public async Task GetPageAsync_failure_names_the_request_and_the_servers_own_reason() {
         // The real 400 body this host returns for an instant-literal date filter (see

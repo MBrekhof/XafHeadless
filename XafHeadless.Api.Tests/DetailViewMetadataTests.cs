@@ -53,6 +53,43 @@ public class DetailViewMetadataTests : TestBase {
             "Employee carries a real [RuleRequiredField] on this member — metadata must report Required:true");
     }
 
+    // EDIT-001: the projector classified an item's editor from the member's CLR TYPE alone and never read
+    // the alias the app DECLARED. Order.OrderTerms is [EditorAlias(DxHtmlPropertyEditor)] over a string, so
+    // it projected as a plain "string" editor and rendered as a text box -- silently, never even reaching
+    // the unsupported-editor badge, because nothing recorded that anything unusual had been asked for.
+    //
+    // The alias is projected ADDITIVELY: Editor keeps its CLR-derived value, so a client that does not
+    // understand the alias behaves exactly as before. XAF's own resolution order is mirrored (member
+    // attribute -> implemented-interface member -> member type; verified against installed 26.1 source,
+    // ModelMemberLogic.TryGetAlias), because guessing it would have missed the two fallbacks.
+    [TestMethod]
+    public async Task Declared_editor_alias_reaches_the_client() {
+        var client = await GetClientAsync("Admin");
+        var meta = await client.GetFromJsonAsync<JsonElement>($"api/model/views/{KnownModel.OrderDetailViewId}");
+        var flat = MetadataTestHelpers.Flatten(meta.GetProperty("Layout")).ToList();
+        var item = flat.Single(n => n.GetProperty("Kind").GetString() == "item"
+            && n.TryGetProperty("Member", out var m) && m.GetString() == KnownModel.OrderAliasMember);
+
+        Assert.AreEqual(KnownModel.OrderAliasValue, item.GetProperty("EditorAlias").GetString(),
+            "the app declared this member's editor explicitly -- that instruction must reach the client");
+        Assert.AreEqual("string", item.GetProperty("Editor").GetString(),
+            "the alias is additive: the CLR classification must not change, or every existing client breaks");
+    }
+
+    // A member with no [EditorAlias] must carry none -- an empty string here would look like a declared
+    // alias the client cannot resolve, and would degrade a perfectly good editor to a badge.
+    [TestMethod]
+    public async Task Members_without_a_declared_alias_carry_none() {
+        var client = await GetClientAsync("Admin");
+        var meta = await client.GetFromJsonAsync<JsonElement>($"api/model/views/{KnownModel.OrderDetailViewId}");
+        var flat = MetadataTestHelpers.Flatten(meta.GetProperty("Layout")).ToList();
+        var plain = flat.Single(n => n.GetProperty("Kind").GetString() == "item"
+            && n.TryGetProperty("Member", out var m) && m.GetString() == KnownModel.OrderColumn1);
+
+        Assert.IsTrue(!plain.TryGetProperty("EditorAlias", out var a) || a.ValueKind == JsonValueKind.Null,
+            $"{KnownModel.OrderColumn1} declares no alias, so none must be projected");
+    }
+
     // DATA-001: after reconciling ClassifyDataType and ProjectLookup onto ONE predicate (IsLookupMember),
     // the classification (Editor) and the projection (Lookup) can never disagree for any member. This guard
     // pins that invariant on the case the fix most affects: LookupProbe.Ref is a genuinely INVERSE-LESS,

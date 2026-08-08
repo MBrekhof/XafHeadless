@@ -35,9 +35,13 @@ public record AppearanceRuleDto(string Criteria, IReadOnlyList<string> TargetIte
 // collection is owned by the master (New/Delete), a non-aggregated (shared) one is Link/Unlink. The client
 // uses it to decide which nested-collection actions to offer. Nullable/default (null on item nodes and old
 // payloads) so existing positional constructions keep compiling.
+// EDIT-001: EditorAlias is the editor the app DECLARED via [EditorAlias], e.g. "DxHtmlPropertyEditor" on a
+// string member. It is ADDITIVE to Editor, which stays the CLR-derived classification -- a client that does
+// not understand the alias behaves exactly as before. Null when the member declares none.
 public record LayoutNode(string Kind, string? Caption, string? Member, string? Editor,
     bool? AllowWrite, bool? Required, int? MaxLength, string? ViewId, string? MasterKeyMember,
-    LookupMetadata? Lookup, List<EnumValueMetadata>? Enum, List<LayoutNode>? Children, bool? Aggregated = null);
+    LookupMetadata? Lookup, List<EnumValueMetadata>? Enum, List<LayoutNode>? Children, bool? Aggregated = null,
+    string? EditorAlias = null);
 public record ActionMetadata(string Id, string Caption, bool SelectionRequired);
 
 // GAP-004: one flat, security-trimmed nav-menu entry. See NavigationProjector for the filter.

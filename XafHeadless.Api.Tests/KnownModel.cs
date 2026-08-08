@@ -31,6 +31,13 @@ public static class KnownModel {
     // originally claimed. Emblem in turn carries [XafDefaultProperty(nameof(CityName))], a string, so the
     // display path resolves in exactly two hops. This is the live case for the whole chain of findings.
     public const string OrderTwoHopLookupColumn = "Store";
+
+    // EDIT-001: a member the app annotated with [EditorAlias]. Order.OrderTerms is
+    // [EditorAlias(EditorAliases.DxHtmlPropertyEditor)] over a plain string, so CLR-type classification
+    // alone calls it "string" and renders a text box -- losing the app's explicit instruction. The alias
+    // constant resolves to this literal (OutlookInspiredDemo.Module/EditorAliases.cs).
+    public const string OrderAliasMember = "OrderTerms";
+    public const string OrderAliasValue = "DxHtmlPropertyEditor";
     public const string OrderTwoHopDisplayPath = "Emblem.CityName";
     public const string OrderCollectionMember = "OrderItems";  // aggregated nested collection on Order_DetailView
     public const string OrderCollectionViewId = "Order_OrderItems_ListView"; // live nestedList.ViewId

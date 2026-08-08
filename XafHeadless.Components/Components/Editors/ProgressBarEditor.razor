@@ -1,0 +1,38 @@
+@inherits EditorComponentBase
+
+@* EDIT-001: renders a member the app DECLARED as [EditorAlias(ProgressBarPropertyEditor)] -- a number
+   whose point is its position in a range, not its digits (Quote.Opportunity, EmployeeTask.PercentCompleted).
+
+   Read-only by nature: a progress bar is a display of a value, and XAF's own ProgressBarPropertyEditor is
+   likewise not an input. The numeric value is shown beside it so nothing is lost versus the NumberEditor
+   this replaces -- an editable member still shows its exact figure, it just no longer offers a spinner for
+   something the app said should be read as progress.
+
+   ponytail: the 0-100 assumption is the XAF default; a model that means another range would need the
+   editor's Minimum/Maximum projected, which nothing declares today. *@
+<div class="d-flex align-items-center gap-2">
+    <div class="progress flex-grow-1" role="progressbar"
+         aria-valuenow="@Percent" aria-valuemin="0" aria-valuemax="100" style="height:1rem">
+        <div class="progress-bar" style="width:@(Percent.ToString(System.Globalization.CultureInfo.InvariantCulture))%"></div>
+    </div>
+    <span class="text-muted small">@Display</span>
+</div>
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}
+
+@code {
+    decimal Value => Current switch {
+        decimal d => d,
+        double db => (decimal)db,
+        int i => i,
+        long l => l,
+        string s when decimal.TryParse(s, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var p) => p,
+        _ => 0m
+    };
+
+    // Clamped so a value outside the assumed range cannot render a bar wider than its track.
+    decimal Percent => Math.Clamp(Value, 0m, 100m);
+    string Display => Current is null ? "" : Value.ToString("0.##", System.Globalization.CultureInfo.CurrentCulture);
+}

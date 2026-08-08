@@ -88,8 +88,13 @@ feature here has honoured.
 ignores declared editor aliases entirely, of which this module has 19 across 8 aliases. That is a silent
 wrong-editor bug, not just a missing-editor one.
 
-**Next: EDIT-001 step 1** (project the declared alias), then DASH-001. That order puts a correctness fix
-before a new view type.
+**EDIT-001 is done (2026-08-09)** — the alias is projected additively, the client prefers it and falls back
+to the CLR hint rather than to a badge, and HyperLink + ProgressBar editors ship. `DxHtmlPropertyEditor`,
+the most-declared alias, was deliberately left on its string fallback because rendering stored HTML is an
+XSS vector — [[EDIT-002]].
+
+**Next: DASH-001**, the recommended answer to the chart/pivot finding above and the last model-declared
+view type this platform does not render.
 
 **Standing decisions that apply to every card here, so they are stated once:**
 - **The server holds the data.** No feature may pull an unbounded row set to the client. Order is 55k rows;
@@ -173,34 +178,38 @@ current view/selection**, passing the grid's criteria through.
 **Do not re-implement rendering** — service, artifact storage and download path exist and are proven. High
 value: makes shipped-but-unreachable capability usable. Sizing: medium.
 
-#### EDIT-001: Editor inventory + the missing scalar editors (ID: 1233)
+_EDIT-001 (editor inventory + honouring the DECLARED editor: the projector read only the CLR type and
+silently discarded all 19 `[EditorAlias]` declarations; the alias is now projected additively, the client
+prefers it and falls back to the CLR hint rather than to a badge, and HyperLink + ProgressBar editors
+ship) done 2026-08-09 — see `docs/DONE.md`. `DxHtmlPropertyEditor` deliberately NOT implemented (XSS) —
+that is [[EDIT-002]] below._
 
-**The audit MIG-002 asked for is DONE (2026-08-09) — and it found something bigger than a missing editor.**
+#### EDIT-002: Render DxHtmlPropertyEditor members safely (the XSS decision) (ID: 1241)
 
-**Finding 1: the projector ignores declared editor aliases entirely.** `ViewMetadataProjector` sets a layout
-item's `Editor` purely from `ClassifyDataType`, i.e. from the member's **CLR type**. It never reads the
-model's declared property-editor type. So a member the app explicitly annotated renders as whatever its CLR
-type suggests — HTML as a plain string box, a hyperlink as text, a progress bar as a number spinner, a PDF
-as a string — and **silently**, because nothing degrades to the unsupported-editor badge: as far as the
-projector is concerned nothing unusual was asked for.
+**The alias EDIT-001 deliberately did not implement, and why.** `DxHtmlPropertyEditor` is the most-declared
+alias in the reference module — 7 uses, including `Order.OrderTerms` and `Order.Comments`, both on the
+primary DetailView. EDIT-001 projects the alias and falls back to the plain string editor for it, so those
+fields still read and edit as raw HTML text. Nothing is broken; nothing is rendered either.
 
-**Finding 2: the reference module declares 19 of them, across 8 aliases:** `DxHtmlPropertyEditor` (7),
-`PdfViewerPropertyEditor` (4), `MapHomeOfficePropertyEditor` (2, custom), `HyperLinkPropertyEditor` (2),
-`ProgressBarPropertyEditor` (2), `EnumImageOnlyEditor` (1, custom), `CriteriaPropertyEditor` (1). Shipped
-editors remain the seven CLR-type ones: Bool, Date, Enum, Image, Lookup, Number, String.
+**Why it stopped there: rendering stored HTML is an XSS vector.** The value comes from the database, and a
+naive `@((MarkupString)value)` executes whatever is in it — script tags, event handlers, `javascript:` URLs
+— in the authenticated user's session. The repo's own rule is that security measures are not simplified
+away.
 
-**The work this sizes, in order:**
-1. **Project the declared alias** — one new field on the layout item. **Verify first which model node
-   carries it:** `IModelPropertyEditor.PropertyEditorType` is the editor *type*, while `[EditorAlias]` is a
-   string resolved through the editor-descriptor registry. Do not guess — check installed 26.1 source.
-   Everything else is gated on this.
-2. **Honour it client-side**, degrading unknown aliases to the existing badge — strictly better than today,
-   where an unknown alias is invisible and renders as the wrong editor.
-3. **Build the cheap ones:** HyperLink and ProgressBar are a few lines each.
-4. **Decide on the rest.** `DxHtmlPropertyEditor` is the most-used and carries a **security question**:
-   rendering stored HTML is an XSS vector, so it needs sanitising or read-only text rendering, never a naive
-   `MarkupString`. PdfViewer/Map/EnumImageOnly are heavier and two are demo-custom — the natural stopping
-   point.
+**Three options, roughly by cost:**
+1. **Read-only sanitised render** — add a sanitiser (e.g. `HtmlSanitizer`), render cleaned markup read-only,
+   keep the plain-text editor for editing. Smallest safe win; check the dependency's CVE history first.
+2. **A real HTML editor** via DevExpress `DxHtmlEditor` — verify licensing and whether it is in the
+   referenced packages before assuming; note a WYSIWYG still stores markup something must sanitise on the
+   way *out*.
+3. **Leave the string fallback** and document that HTML members render as source — what ships today.
+
+Whatever is chosen, sanitise on the **render** path, not only on save: existing rows already hold whatever
+they hold, and a save-time-only guard trusts data that predates it.
+
+Also unimplemented, lower value: `PdfViewerPropertyEditor` (4 uses; needs a viewer plus the FILE-001 storage
+decision), `MapHomeOfficePropertyEditor` and `EnumImageOnlyEditor` (demo-custom, no general meaning). All
+fall back to their CLR editors and are fine there.
 
 #### CRUD-002: Inline nested-collection editing (ID: 1235)
 

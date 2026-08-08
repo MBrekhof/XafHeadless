@@ -25,9 +25,12 @@ public record AppearanceRuleDto(string Criteria, IReadOnlyList<string> TargetIte
     string? FontColor, string? BackColor, string? FontStyle);
 // GAP-010: Aggregated (nestedList only) mirrors the server's IMemberInfo.IsAggregated -- aggregated
 // (composite, owned) collections use New/Delete, non-aggregated (shared) ones use Link/Unlink.
+// EDIT-001: EditorAlias is the editor the app DECLARED via [EditorAlias] (e.g. "DxHtmlPropertyEditor").
+// Additive to Editor, which stays the CLR-derived classification -- see EditorMap.Resolve.
 public record LayoutNode(string Kind, string? Caption, string? Member, string? Editor,
     bool? AllowWrite, bool? Required, int? MaxLength, string? ViewId, string? MasterKeyMember,
-    LookupMetadata? Lookup, List<EnumValueMetadata>? Enum, List<LayoutNode>? Children, bool? Aggregated = null);
+    LookupMetadata? Lookup, List<EnumValueMetadata>? Enum, List<LayoutNode>? Children, bool? Aggregated = null,
+    string? EditorAlias = null);
 public record ActionMetadata(string Id, string Caption, bool SelectionRequired);
 
 // GAP-004: mirror of XafHeadless.Api/Metadata/ViewMetadataDtos.cs's NavigationItemDto.

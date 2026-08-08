@@ -1,5 +1,56 @@
 # XafHeadless — DONE
 
+#### EDIT-001: Editor inventory, and honouring the editor an app actually declared (ID: 1233)
+
+**Done 2026-08-09.** MIG-002 asked for an editor inventory. The audit found a defect, not just a list.
+
+**The defect: the projector read only the CLR type.** `ViewMetadataProjector` set a layout item's `Editor`
+from `ClassifyDataType` — the member's type — and never looked at what the app had **declared**. So
+`[EditorAlias(DxHtmlPropertyEditor)] string Comments` projected as a plain `"string"` and rendered as a text
+box, **silently**: it never reached the unsupported-editor badge either, because nothing recorded that a
+specific editor had been asked for. The reference module declares **19 aliases across 8 kinds** — DxHtml
+(7), PdfViewer (4), MapHomeOffice (2), HyperLink (2), ProgressBar (2), EnumImageOnly (1), Criteria (1) —
+and every one was discarded. `Order_DetailView` alone loses three.
+
+**Resolution mirrors XAF's own**, verified against installed 26.1 source (`ModelMemberLogic.TryGetAlias`):
+the member's attribute, then the same-named member on any implemented **interface**, then the member's
+**type**. Those two fallbacks are exactly what writing this from memory would have missed. Deliberately
+*not* `IModelMember.PropertyEditorType` — that resolves the alias to a platform-specific editor `Type` (a
+WinForms/Blazor class) which is meaningless headless; the alias **string** is the portable half.
+
+**The contract is additive.** `EditorAlias` rides alongside `Editor`, which keeps its CLR-derived value, so
+a client that ignores the new field behaves exactly as before. `EditorMap.Resolve(node)` tries the alias
+first and **falls back to the CLR hint, never to the badge** — a `DxHtmlPropertyEditor` string still reads
+and edits perfectly well as text, so degrading it to "unsupported editor" would *remove* a working editor.
+That is the difference between honest degradation and a regression wearing its costume.
+
+**Two editors implemented, chosen for being cheap and safe:**
+- **`HyperLinkEditor`** — stays editable (the value is a string), with the link offered beside it. The href
+  is built **only for absolute http/https**: a raw user-controlled string in an `href` is an injection
+  vector, so `javascript:` and anything unparseable render as plain text. `rel="noopener noreferrer"`
+  because `target="_blank"` without it hands the opened page a reference back.
+- **`ProgressBarEditor`** — read-only by nature (XAF's own is too), with the numeric value beside it so
+  nothing is lost versus the NumberEditor it replaces. Value clamped so out-of-range data cannot overflow
+  its track.
+
+**`DxHtmlPropertyEditor` was deliberately NOT implemented** — rendering stored HTML is an XSS vector and
+needs a sanitiser or a read-only renderer, not a naive `MarkupString`. Tracked as **EDIT-002**, along with
+PdfViewer/Map/EnumImageOnly, which fall back to their CLR editors and are fine there.
+
+Tests: `Api.Tests` **74/74** (+2 — the alias reaches the client, and a member without one carries none, so
+an empty string can't masquerade as a declared alias), `Components.Tests` **111/111** (+2 — a declared
+alias wins, an unimplemented one falls back rather than degrading), E2E **12/13** (+1; the failure is
+`JobServerE2ETests` needing smtp4dev). Confirmed by screenshot: Customer.Website renders with its Open link.
+
+**Also corrected here:** LOOKUP-001's record claimed "Build 0 warnings" measured from an Api-only build
+while a host held the other projects' DLLs. The two `Assert.AreEqual`-on-a-count calls it added were
+actually raising MSTEST0037; both fixed. A full clean build with no host running is now **0 warnings,
+0 errors** — and that is the only build whose warning count means anything.
+
+Files: `ViewMetadataProjector.cs`, `ViewMetadataDtos.cs`, `Contracts/ViewMetadata.cs`, `EditorMap.cs`,
+`HyperLinkEditor.razor` (new), `ProgressBarEditor.razor` (new), `DetailViewMetadataTests.cs`,
+`KnownModel.cs`, `EditorMapTests.cs`, `ApiClientTests.cs`, `EditorAliasE2ETests.cs` (new).
+
 #### LOOKUP-001 + PH2-005: A dedicated lookup candidate endpoint, so the editor stops losing values (ID: 1232, ID: 541)
 
 **Done 2026-08-09.** Two card premises were wrong and the work is smaller and different because of it.
@@ -48,7 +99,13 @@ something about row order is a fixture that fails for the wrong reason.
 
 Tests: `Components.Tests` **109/109** (+2), `Api.Tests` 72/72, E2E **11/12** — the one failure is
 `JobServerE2ETests` needing smtp4dev, unrelated. Confirmed by screenshot: the Employee combo reads
-"Barbara Banks". Build 0 warnings.
+"Barbara Banks".
+
+**Correction (2026-08-09):** this record originally said "Build 0 warnings". That was measured from an
+Api-only build while a host held the other projects' DLLs, so it was not a clean solution-wide count. The
+two `Assert.AreEqual`-on-a-count calls added here actually raised **MSTEST0037** twice; both were fixed in
+the EDIT-001 pass (`Assert.HasCount` / `Assert.IsEmpty`). Measure warnings on a full build with no host
+running, or the number means nothing.
 
 Files: `LookupController.cs` (new), `ViewMetadataProjector.cs`, `ApiClient.cs`, `Contracts/LookupItem.cs`
 (new), `LookupEditor.razor`, `ApiClientTests.cs`, `LookupEditorE2ETests.cs` (new).

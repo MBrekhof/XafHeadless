@@ -1,0 +1,34 @@
+@inherits EditorComponentBase
+
+@* EDIT-001: renders a member the app DECLARED as [EditorAlias(HyperLinkPropertyEditor)] -- a string that
+   is meant to be followed, not just read. Editable exactly like StringEditor (the value IS a string), with
+   the link offered alongside so the field stays usable rather than becoming read-only.
+
+   The href is only offered for http/https. A raw user-controlled string in an href is an injection vector
+   -- "javascript:alert(1)" typed into this box would otherwise become a clickable script. Anything that is
+   not an absolute http(s) URL renders as plain text, which is the safe reading of an unparseable value
+   rather than a guess at what the user meant. rel="noopener noreferrer" because target="_blank" without it
+   hands the opened page a reference back to this one. *@
+<div class="d-flex align-items-center gap-2">
+    <DxTextBox Text="@Text"
+               TextChanged="@((string? v) => Set(v))"
+               ReadOnly="@IsReadOnly"
+               maxlength="@Node.MaxLength"
+               CssClass="flex-grow-1" />
+    @if (SafeHref is { } href) {
+        <a href="@href" target="_blank" rel="noopener noreferrer" title="@Text">Open</a>
+    }
+</div>
+@if (Error is not null) {
+    <div class="text-danger small">@Error</div>
+}
+
+@code {
+    string? Text => (string?)Current;
+
+    // Absolute http/https only -- see the note above on javascript: URLs.
+    string? SafeHref =>
+        Uri.TryCreate(Text, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri.AbsoluteUri : null;
+}

@@ -61,7 +61,7 @@ public class ApiClientTests {
 
         var items = await client.GetLookupItemsAsync("Employee", search: "har", key: "k1", top: 25);
 
-        Assert.AreEqual(1, items.Length);
+        Assert.HasCount(1, items);
         Assert.AreEqual("Amelia Harper", items[0].Text);
         StringAssert.Contains(handler.LastUrl!, "api/lookup/Employee", "wrong endpoint");
         StringAssert.Contains(handler.LastUrl!, "key=k1", "the current key must reach the server");
@@ -74,7 +74,7 @@ public class ApiClientTests {
     [TestMethod]
     public async Task GetLookupItemsAsync_degrades_to_empty_rather_than_throwing() {
         var client = Client(HttpStatusCode.InternalServerError, "boom");
-        Assert.AreEqual(0, (await client.GetLookupItemsAsync("Employee")).Length);
+        Assert.IsEmpty(await client.GetLookupItemsAsync("Employee"));
     }
 
     // ---- CRUD-001: the client half of GAP-003 ----

@@ -97,7 +97,8 @@ public class ViewMetadataProjector {
                 AllowWrite: pe.AllowEdit && CanWriteMember(mi),              // rule 2: model ∩ security
                 Required: !mi.MemberTypeInfo?.Type.IsValueType == true && IsRequired(pe),
                 MaxLength: pe.ModelMember.Size > 0 ? pe.ModelMember.Size : null,
-                null, null, ProjectLookup(mi), ProjectEnum(mi), null);
+                null, null, ProjectLookup(mi), ProjectEnum(mi), null,
+                EditorAlias: ResolveEditorAlias(mi));
         }
 
         // .OfType<IModelNode>() (not a raw LINQ .Select() on the IModelList<T> interface) matches the
@@ -318,6 +319,33 @@ public class ViewMetadataProjector {
         }
         segments.Add(display.Name);
         return (string.Join('.', segments), display);
+    }
+
+    // EDIT-001: the editor the app DECLARED, as opposed to the one its CLR type implies. Until this
+    // existed the projector read only the type, so `[EditorAlias(DxHtmlPropertyEditor)] string Comments`
+    // projected as a plain "string" and rendered as a text box -- silently, since nothing recorded that a
+    // specific editor had been asked for.
+    //
+    // The resolution order MIRRORS XAF's own (verified against installed 26.1 source,
+    // ModelMemberLogic.TryGetAlias): the member's attribute, then the same-named member on any implemented
+    // INTERFACE, then the member's TYPE. The two fallbacks are the reason this was not written from
+    // memory -- an alias declared on an interface or on a value type would otherwise be silently missed.
+    //
+    // Deliberately NOT IModelMember.PropertyEditorType: that resolves the alias to a platform-specific
+    // editor Type (a WinForms/Blazor class) which means nothing to a headless client. The alias STRING is
+    // the portable half of the contract.
+    // Fully qualified rather than a `using DevExpress.Persistent.Base`: that namespace carries a lot of
+    // common names and this file already juggles several DevExpress namespaces.
+    static string? ResolveEditorAlias(IMemberInfo mi) {
+        var attribute = mi.FindAttribute<DevExpress.Persistent.Base.EditorAliasAttribute>();
+        if (attribute is null)
+            foreach (var interfaceInfo in mi.Owner.ImplementedInterfaces) {
+                attribute = interfaceInfo.FindMember(mi.Name)
+                    ?.FindAttribute<DevExpress.Persistent.Base.EditorAliasAttribute>();
+                if (attribute is not null) break;
+            }
+        attribute ??= mi.MemberTypeInfo?.FindAttribute<DevExpress.Persistent.Base.EditorAliasAttribute>();
+        return attribute?.Alias;
     }
 
     static List<EnumValueMetadata>? ProjectEnum(IMemberInfo mi) {

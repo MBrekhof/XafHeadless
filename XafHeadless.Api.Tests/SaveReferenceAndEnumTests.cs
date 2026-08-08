@@ -212,8 +212,12 @@ orderB.ValueKind, "could not find an Order with a different Customer in the firs
         Assert.AreEqual("application/json", restrictedResp.Content.Headers.ContentType?.MediaType,
             "403 must be SaveController's own structured JSON error, not the framework's raw-text commit-time message");
         var restrictedBody = await restrictedResp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Contains(KnownModel.RestrictedWriteDeniedMember,
-restrictedBody.GetProperty("error").GetString(), "403 body must name the denied member");
+        // Asserted non-null separately (was CS8604): a null "error" would otherwise fail as a confusing
+        // empty-string mismatch instead of naming the actual problem.
+        var restrictedError = restrictedBody.GetProperty("error").GetString();
+        Assert.IsNotNull(restrictedError, "403 body must carry an error string");
+        Assert.Contains(KnownModel.RestrictedWriteDeniedMember, restrictedError,
+            "403 body must name the denied member");
 
         var newValue = $"PO-{Guid.NewGuid():N}";
         var adminResp = await admin.PostAsJsonAsync($"api/save/Order/{key}",

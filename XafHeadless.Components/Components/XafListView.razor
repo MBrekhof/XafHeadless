@@ -210,7 +210,28 @@
         args.Handled = true;
         Logger.LogError(args.Exception, "Grid data request failed for view {ViewId}", ViewId);
         error = $"Failed to load data: {args.Exception.Message}";
+        // A 400 means the query WE built is invalid, and if the layout that produced it is persisted the
+        // view reproduces the failure on every load (live repro: sorting by a lookup whose display member
+        // is Edm.Binary). Drop the persisted sort so the failure cannot outlive the click; the user's
+        // column order and widths survive. Anything else (5xx, a network blip) is not the layout's fault,
+        // so the layout is left alone.
+        if (args.Exception is ApiRequestException { StatusCode: System.Net.HttpStatusCode.BadRequest })
+            InvokeAsync(DropPersistedSortAsync);
         InvokeAsync(StateHasChanged);
+    }
+
+    async Task DropPersistedSortAsync() {
+        if (!ShouldPersist) return;
+        try {
+            var json = await Api.GetPrefsAsync(ViewId);
+            if (string.IsNullOrEmpty(json)) return;
+            if (JsonSerializer.Deserialize<GridPersistentLayout>(json) is not { } layout) return;
+            await Api.SavePrefsAsync(ViewId, JsonSerializer.Serialize(GridBinding.StripSorts(layout)));
+            Logger.LogWarning("Dropped the persisted sort for {ViewId} after a 400 so the view recovers on reload", ViewId);
+        } catch (Exception ex) {
+            // Best-effort recovery: never let it mask the error the user is already being shown.
+            Logger.LogError(ex, "Could not drop the persisted sort for {ViewId}", ViewId);
+        }
     }
 
     // (Task 4.3: the Task-4.2 OnCustomizeContextMenu handler that stripped ALL grouping commands in

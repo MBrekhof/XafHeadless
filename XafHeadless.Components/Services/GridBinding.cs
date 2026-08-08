@@ -101,6 +101,20 @@ public static class GridBinding {
                     ? c : c with { GroupIndex = null }))
         };
 
+    // Drops sort state, keeping column order/width and PageSize. A sort the server cannot honour is a
+    // visible, recoverable ceiling -- until LayoutAutoSaving persists it, at which point the view
+    // reproduces the failure on EVERY subsequent load (live repro: Order_ListView sorted by Store, whose
+    // lookup display member Emblem is Edm.Binary -> "The $orderby expression must evaluate to a single
+    // value of primitive type"; the view stayed broken until the prefs were cleared by hand). The client
+    // cannot predict this -- LookupMetadata projects no type for the display member -- so the ceiling is
+    // enforced after the fact instead: the failing sort does not outlive the click. Upgrade path: project
+    // the display member's data type and refuse the sort up front, like the filter-row ceiling does.
+    public static GridPersistentLayout StripSorts(GridPersistentLayout layout) =>
+        layout.Columns is null ? layout : layout with {
+            Columns = new GridPersistentLayoutCollection<GridPersistentLayoutColumn>(
+                layout.Columns.Select(c => c with { SortIndex = null, SortOrder = null }))
+        };
+
     // GridPersistentLayout.PageSize is `int?` carrying [JsonIgnore(WhenWritingDefault)] (dxdocs, 26.1),
     // so a null PageSize is omitted from the persisted blob and deserializes back as null. Applying
     // THAT layout resets DxGrid.PageSize to its documented default of 10, silently overriding the value

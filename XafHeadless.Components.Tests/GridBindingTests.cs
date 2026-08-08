@@ -397,6 +397,34 @@ public class GridBindingTests {
     }
 
     [TestMethod]
+    public void StripSorts_clears_sort_state_but_keeps_the_rest_of_the_layout() {
+        // A sort the server cannot honour is a visible, recoverable ceiling -- until LayoutAutoSaving
+        // PERSISTS it, at which point the view fails on every subsequent load (live repro: sorting
+        // Order_ListView by Store, whose lookup display member Emblem is Edm.Binary, earns "The
+        // $orderby expression must evaluate to a single value of primitive type"; the saved layout then
+        // reproduced that 400 on load until the prefs were cleared by hand). Dropping just the sort
+        // recovers the view while keeping the column order/width the user arranged.
+        var layout = new GridPersistentLayout {
+            PageSize = 25,
+            Columns = new GridPersistentLayoutCollection<GridPersistentLayoutColumn>([
+                new GridPersistentLayoutColumn { FieldName = "InvoiceNumber", Width = "120px" },
+                new GridPersistentLayoutColumn { FieldName = "Store_Emblem", SortIndex = 0, SortOrder = GridColumnSortOrder.Ascending },
+            ])
+        };
+
+        var stripped = GridBinding.StripSorts(layout);
+
+        Assert.IsTrue(stripped.Columns!.All(c => c.SortIndex is null && c.SortOrder is null),
+            "every column's sort state must be gone");
+        Assert.AreEqual(25, stripped.PageSize, "PageSize must survive");
+        Assert.AreEqual("120px", stripped.Columns!.First(c => c.FieldName == "InvoiceNumber").Width,
+            "column widths must survive");
+        Assert.AreEqual(2, stripped.Columns!.Count, "no column may be dropped");
+        // A column-less layout is legal (WhenWritingDefault trimming) and must not throw.
+        Assert.IsNotNull(GridBinding.StripSorts(new GridPersistentLayout()));
+    }
+
+    [TestMethod]
     public void RestorePageSize_refills_a_PageSize_that_serialization_trimmed_away() {
         // GridPersistentLayout.PageSize is int? carrying [JsonIgnore(WhenWritingDefault)] (verified in
         // dxdocs, 26.1), so a null PageSize is OMITTED from the persisted blob and deserializes back as

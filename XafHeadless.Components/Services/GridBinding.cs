@@ -85,6 +85,15 @@ public static class GridBinding {
                     ? c : c with { GroupIndex = null }))
         };
 
+    // GridPersistentLayout.PageSize is `int?` carrying [JsonIgnore(WhenWritingDefault)] (dxdocs, 26.1),
+    // so a null PageSize is omitted from the persisted blob and deserializes back as null. Applying
+    // THAT layout resets DxGrid.PageSize to its documented default of 10, silently overriding the value
+    // the markup set -- live repro: Order_ListView (the only view with persisted prefs) served 10 rows
+    // per page while every unpersisted view served 25. Refill the markup value when the blob carries
+    // none; a persisted user choice still wins.
+    public static GridPersistentLayout RestorePageSize(GridPersistentLayout layout, int markupPageSize) =>
+        layout.PageSize is null ? layout with { PageSize = markupPageSize } : layout;
+
     // FieldName -> real OData path for every rendered column, for $orderby translation (sorting a
     // lookup column sorts by its expanded display member, e.g. Customer_Name -> Customer/Name).
     public static Dictionary<string, string> BuildOrderPathMap(IEnumerable<ColumnMetadata> columns) =>

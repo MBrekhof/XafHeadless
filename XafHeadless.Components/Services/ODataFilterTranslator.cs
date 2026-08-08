@@ -99,6 +99,10 @@ public static class ODataFilterTranslator {
             _ => null // e.g. Like -- ceiling
         };
         if (op is null) return null;
+        // A DateTime constant compares over date(), never as an instant -- see the remarks above
+        // FormatValue for the 400 an instant literal earns from this host.
+        if (b.RightOperand is OperandValue { Value: DateTime day })
+            return $"date({path}) {op} {day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
         return FormatValue(b.RightOperand) is { } value ? $"{path} {op} {value}" : null;
     }
 
@@ -119,13 +123,16 @@ public static class ODataFilterTranslator {
     static string? Path(CriteriaOperator operand, IReadOnlyDictionary<string, string> pathByField) =>
         operand is OperandProperty p && pathByField.TryGetValue(p.PropertyName, out var path) ? path : null;
 
-    // GRID-004 (companion-headless backport): DateTime criteria arrive as WALL times (GridBinding.
-    // MaterializeRow materializes the wire's own wall time; the date filter cell's entry rounds to a
-    // >=/< range of such values), but the server compares $filter date literals as INSTANTS against
-    // Edm.DateTimeOffset (proven live in the source repo: wall-time+Z misses the row, true-UTC
-    // instant hits). ToUniversalTime() converts via the local zone (DST-aware per date; no-op for
-    // Kind=Utc) so the emitted literal is the instant the user's wall time means. ponytail: assumes
-    // the client host and the DB share a timezone; make the zone configurable if they ever diverge.
+    // DateTime comparisons do NOT go through here -- TranslateBinary emits them over date() with a
+    // date-only literal, because this host cannot compare them as instants at all. The members are
+    // Edm.DateTimeOffset in the EDM while the CLR property is DateTime, so OData finds no operator for
+    // the pair and answers 400: "The binary operator GreaterThanOrEqual is not defined for the types
+    // 'System.Nullable`1[System.DateTime]' and 'System.Nullable`1[System.DateTimeOffset]'" (live
+    // evidence; a no-offset literal fails to parse as Edm.DateTimeOffset instead, and the unhandled
+    // 400 terminated the Blazor circuit). date(path) against a date literal is the form it accepts,
+    // and it needs no zone conversion -- the stored wall-time date is what the picker's day means.
+    // This DateTime branch remains only for non-comparison operators (a DateTime reaching
+    // contains/startswith), where an unquoted Convert.ToString would emit a broken literal.
     static string? FormatValue(CriteriaOperator operand) => operand switch {
         OperandValue { Value: null } => "null",
         OperandValue { Value: string s } => $"'{s.Replace("'", "''")}'",

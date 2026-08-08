@@ -16,6 +16,31 @@ public class ODataFilterTranslatorTests {
         scalarFields.ToDictionary(f => f, f => f);
 
     [TestMethod]
+    public void DateTime_comparisons_translate_over_date_not_instant_literals() {
+        // These members are Edm.DateTimeOffset in the EDM but DateTime in the CLR, so the server has NO
+        // operator for the pair and rejects an instant literal outright (live evidence, GET
+        // api/odata/Order?$filter=OrderDate ge 2026-04-04T00:00:00Z -> 400 "The binary operator
+        // GreaterThanOrEqual is not defined for the types 'System.Nullable`1[System.DateTime]' and
+        // 'System.Nullable`1[System.DateTimeOffset]'"). A no-offset literal fares no better -- it fails
+        // to PARSE as Edm.DateTimeOffset. date(path) compared against a date literal is the one form
+        // this host accepts (verified live: 200, and the same row count the day holds).
+        var map = Map("OrderDate");
+        Assert.AreEqual("date(OrderDate) ge 2026-03-19", ODataFilterTranslator.Translate(
+            new BinaryOperator("OrderDate", new DateTime(2026, 3, 19), BinaryOperatorType.GreaterOrEqual), map));
+        Assert.AreEqual("date(OrderDate) eq 2026-03-19", ODataFilterTranslator.Translate(
+            new BinaryOperator("OrderDate", new DateTime(2026, 3, 19), BinaryOperatorType.Equal), map));
+        // No zone conversion: the day the user picked is the day compared. The previous
+        // ToUniversalTime() step pushed a late-evening wall time onto a NEIGHBOURING date, which is a
+        // wrong-answer bug independent of the 400 above.
+        Assert.AreEqual("date(OrderDate) lt 2026-03-19", ODataFilterTranslator.Translate(
+            new BinaryOperator("OrderDate", new DateTime(2026, 3, 19, 23, 30, 0), BinaryOperatorType.Less), map));
+        // DateTimeKind is irrelevant by design now -- a Kind=Utc value renders its own date, unconverted.
+        Assert.AreEqual("date(OrderDate) ge 2026-01-15", ODataFilterTranslator.Translate(
+            new BinaryOperator("OrderDate", new DateTime(2026, 1, 15, 10, 30, 0, DateTimeKind.Utc),
+                BinaryOperatorType.GreaterOrEqual), map));
+    }
+
+    [TestMethod]
     public void Translate_string_contains() {
         var criteria = new FunctionOperator(FunctionOperatorType.Contains, new OperandProperty("InvoiceNumber"), "000");
         Assert.AreEqual("contains(InvoiceNumber,'000')", ODataFilterTranslator.Translate(criteria, Map("InvoiceNumber")));
@@ -73,33 +98,10 @@ public class ODataFilterTranslatorTests {
         Assert.AreEqual("contains(Customer/Name,'Acme')", ODataFilterTranslator.Translate(criteria, map));
     }
 
-    [TestMethod]
-    public void Translate_formats_datetime_as_utc_iso8601() {
-        var criteria = new BinaryOperator("OrderDate", new DateTime(2026, 1, 15, 10, 30, 0, DateTimeKind.Utc),
-            BinaryOperatorType.GreaterOrEqual);
-        Assert.AreEqual("OrderDate ge 2026-01-15T10:30:00Z", ODataFilterTranslator.Translate(criteria, Map("OrderDate")));
-    }
-
-    [TestMethod]
-    public void Translate_converts_wall_time_date_range_to_utc_instants() {
-        // GRID-004 (companion-headless backport): the exact shape the date filter cell emits -- property >=
-        // day and property < next-day, both Kind=Unspecified WALL times. The server compares $filter
-        // literals as instants, so the translator must zone-convert (wall time + "Z" as-is misses
-        // the rows -- proven live in the origin repo). On a UTC machine this degrades to a format
-        // check; on any other zone it proves the conversion actually happened.
-        var day = new DateTime(2026, 3, 19, 0, 0, 0, DateTimeKind.Unspecified);
-        var next = day.AddDays(1);
-        var criteria = GroupOperator.And(
-            new BinaryOperator("OrderDate", day, BinaryOperatorType.GreaterOrEqual),
-            new BinaryOperator("OrderDate", next, BinaryOperatorType.Less));
-
-        static string Utc(DateTime dt) => dt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss") + "Z";
-        Assert.AreEqual($"(OrderDate ge {Utc(day)} and OrderDate lt {Utc(next)})",
-            ODataFilterTranslator.Translate(criteria, Map("OrderDate")));
-        if (TimeZoneInfo.Local.GetUtcOffset(day) != TimeSpan.Zero)
-            Assert.AreNotEqual($"(OrderDate ge 2026-03-19T00:00:00Z and OrderDate lt 2026-03-20T00:00:00Z)",
-                ODataFilterTranslator.Translate(criteria, Map("OrderDate")));
-    }
+    // (Translate_formats_datetime_as_utc_iso8601 and Translate_converts_wall_time_date_range_to_utc_instants
+    // are gone: both asserted the UTC-instant wire format, which this host answers with 400. The
+    // replacement contract is DateTime_comparisons_translate_over_date_not_instant_literals above, plus
+    // GridBindingTests.BuildDayRangeCriteria_round_trips_and_translates_to_a_date_range for the range shape.)
 
     [TestMethod]
     public void Translate_formats_bool_as_bare_true_false() {

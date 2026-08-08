@@ -33,7 +33,7 @@
        Modernist row-hover tint cannot be done in CSS alone -- without the flag the grid never marks a
        hovered row at all. The tint colour comes from --dxbl-grid-hover-bg in modernist-theme.css. *@
     <DxGrid Data="@GridData" KeyFieldName="@keyField"
-            PageSize="25" AllowSort="true" ShowFilterRow="true" AllowSelectRowByClick="true"
+            PageSize="@PageSize" AllowSort="true" ShowFilterRow="true" AllowSelectRowByClick="true"
             HighlightRowOnHover="true"
             ShowGroupPanel="true" ContextMenus="GridContextMenus.Header"
             SelectionMode="GridSelectionMode.Single"
@@ -79,6 +79,10 @@
     // Client-side grouping needs all rows in memory; we load at most this many and flag truncation in the UI.
     // Nested tabs are filtered to a single master, so the cap only ever bites the big top-level lists.
     const int RowCap = 5000;
+
+    // Rows per page. A const rather than a markup literal because OnLayoutAutoLoading has to restore it
+    // when a persisted layout carries no PageSize -- see GridBinding.RestorePageSize.
+    const int PageSize = 25;
 
     ViewMetadata? meta;
     // Backport (companion-headless BOOT-001 E2E finding, commit 520acd8): OnParametersSetAsync overlap guard.
@@ -308,6 +312,8 @@
         // grouping on server-groupable columns is honest now ($apply=groupby) and persists.
         if (serverData is not null)
             layout = GridBinding.SanitizeLayoutForServerMode(layout, serverGroupableFields!);
-        e.Layout = layout;
+        // A blob with no PageSize would reset the grid to DevExpress's default of 10, overriding the
+        // markup -- refill it (GridBinding.RestorePageSize).
+        e.Layout = GridBinding.RestorePageSize(layout, PageSize);
     }
 }

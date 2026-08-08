@@ -355,18 +355,31 @@ public class GridBindingTests {
     }
 
     [TestMethod]
-    public void BuildDayRangeCriteria_round_trips_and_translates_to_an_instant_range() {
+    public void BuildDayRangeCriteria_round_trips_and_translates_to_a_date_range() {
         // The explicit date filter cell's criteria -- the same [day, next-day) shape the built-in
         // filter row produces for real DateTime columns. Time-of-day normalizes to the day.
         var criteria = GridBinding.BuildDayRangeCriteria("OrderDate", new DateTime(2026, 3, 19, 14, 0, 0));
         Assert.AreEqual(new DateTime(2026, 3, 19), GridBinding.ExtractDayFromCriteria(criteria));
         Assert.IsNull(GridBinding.BuildDayRangeCriteria("OrderDate", null));
         Assert.IsNull(GridBinding.ExtractDayFromCriteria(null));
-        // The translator renders it as a parenthesized ge/lt INSTANT range (zone-converted, Z-suffixed).
+        // The translator renders it over date(), NOT as an instant range -- see
+        // ODataFilterTranslatorTests.DateTime_comparisons_translate_over_date_not_instant_literals
+        // for the 400 that instant literals earn from this host. Exact string, no zone dependence.
         var translated = ODataFilterTranslator.Translate(criteria,
             new Dictionary<string, string> { ["OrderDate"] = "OrderDate" });
-        StringAssert.Matches(translated, new System.Text.RegularExpressions.Regex(
-            @"^\(OrderDate ge \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z and OrderDate lt \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\)$"));
+        Assert.AreEqual("(date(OrderDate) ge 2026-03-19 and date(OrderDate) lt 2026-03-20)", translated);
+    }
+
+    [TestMethod]
+    public void RestorePageSize_refills_a_PageSize_that_serialization_trimmed_away() {
+        // GridPersistentLayout.PageSize is int? carrying [JsonIgnore(WhenWritingDefault)] (verified in
+        // dxdocs, 26.1), so a null PageSize is OMITTED from the persisted blob and deserializes back as
+        // null. Handing DxGrid that layout resets its PageSize to the documented default of 10, silently
+        // overriding the markup value -- live repro: Order_ListView (the one view with persisted prefs)
+        // served 10 rows per page while every unpersisted view served 25.
+        Assert.AreEqual(25, GridBinding.RestorePageSize(new GridPersistentLayout(), 25).PageSize);
+        // A persisted user choice still wins -- that is the point of persisting the layout.
+        Assert.AreEqual(50, GridBinding.RestorePageSize(new GridPersistentLayout { PageSize = 50 }, 25).PageSize);
     }
 
     [TestMethod]

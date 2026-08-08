@@ -15,7 +15,7 @@
     <!-- The ONLY DevExpress dependency in the client stack. This is the Blazor UI package
          (DxGrid/DxTabs/editors); it carries NO reference to DevExpress.ExpressApp or the demo
          module. The wire rule holds: this RCL talks to the engine only over HTTP via ApiClient. -->
-    <PackageReference Include="DevExpress.Blazor" Version="26.1.3" />
+    <PackageReference Include="DevExpress.Blazor" Version="26.1.4" />
   </ItemGroup>
 
 </Project>

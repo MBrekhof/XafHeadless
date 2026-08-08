@@ -21,6 +21,50 @@ _GRID-005 (project a lookup display member's data type so an impossible sort is 
 `docs/DONE.md`. It also **corrected BUG-006's recorded root cause**: Store's display member `Emblem` is a
 **reference to an entity**, not the `Edm.Binary` blob that record claimed._
 
+#### BUG-008: Order_ListView's Store column renders permanently blank — its display path resolves to an entity (ID: 1226)
+
+**Found 2026-08-08 while implementing GRID-005**, which is built on the same fact but only closed the
+*sorting* half. The column is not empty data — it can never render text.
+
+**What happens.** `Order_ListView`'s `Store` column is a lookup on `CustomerStore`, whose default property
+is `Emblem` (`[XafDefaultProperty(nameof(Emblem))]`). `Emblem` is a **reference to the `Emblem` entity**,
+not a scalar. So `GridBinding.PathSegments` yields `[Store, Emblem]`, `ExpandClause` emits
+`$expand=Store($select=Emblem)` — selecting a *navigation property* — and `MaterializeRow` reads a value
+that is an object, not a display string. The cell shows nothing.
+
+**Evidence, on the wire and on screen** (not inferred):
+- Api log during the GRID-005 work:
+  `GET /api/odata/Order?$count=true&$skip=0&$top=25&$orderby=InvoiceNumber asc&$expand=Customer($select=Name),Store($select=Emblem)`
+  (200 — the host accepts it, it just doesn't carry a renderable value).
+- The live grid row sampled by `LookupSortCeilingE2ETests`:
+  `0000001 | 05/04/2023 | 06/04/2023 | Air | DHL | E-Mart | <blank> | 225 | 55,725 | 15 Days | 0`
+  — every other cell has text; the Store cell is empty.
+- `docs/DONE.md`'s GRID-003 record already noted the blank cell in 2026-07-13 ("that cell has no text to
+  show") but attributed it to `Emblem` being a `byte[]` image. That attribution was wrong and has been
+  corrected; the blankness is real and was never fixed.
+
+**The likely fix — resolve the display member recursively.** `Emblem` itself carries
+`[XafDefaultProperty(nameof(CityName))]`, and `CityName` is a `string`. So the honest display path is
+`Store/Emblem/CityName`. `ProjectLookup` currently takes exactly one hop (`targetInfo.DefaultMember`); it
+would walk while the default member is itself a lookup, bounded against cycles. The client side is already
+ready for depth: `ExpandClause` nests for paths longer than two segments (BUG-004), so
+`$expand=Store($expand=Emblem($select=CityName))` needs no client change — but `LookupMetadata.DisplayMember`
+becomes a *path* rather than a member name, which is a wire-contract change affecting `FieldFor`/
+`OrderPathFor` and their tests. Verify the recursive-default-property pattern against installed 26.1 source
+before implementing; do not hand-roll it from memory.
+
+**It interacts with [[GRID-005]], and the interaction is the point.** Once the display path resolves to a
+primitive, `DisplayDataType` becomes `"string"` and `IsServerSortable` stops refusing the column — sorting
+and grouping come back for free, because they would then order by `Store/Emblem/CityName`, which OData can
+actually do. GRID-005's ceiling is the correct behaviour for a column that cannot be resolved; this makes
+fewer columns fall into it.
+
+**Cheaper alternative if the wire change is unwanted:** treat a lookup whose display member is itself a
+reference the way `VisibleColumns` treats `image` — omit the column rather than render a permanently blank
+one. Honest, but it drops a column the XAF model asked for.
+
+Scope: projector + wire contract + client path handling + tests. Not a one-liner.
+
 #### GRID-006: Date filtering leans on `date()` because the EDM and CLR types disagree (ID: 1223)
 
 **Ceiling accepted by BUG-003 (2026-08-08, `docs/DONE.md`), with the cost written down.** The EDM types
@@ -35,6 +79,204 @@ literal compares against a CLR `DateTime`. Both are Api-host changes; measure be
 `date()` path as the fallback for hosts that cannot change their EDM.
 
 ## P2: Medium — platform breadth
+
+### Feature-completeness push (2026-08-08)
+
+#### FEAT-000: Feature-completeness roadmap — sequencing and the standing decisions (ID: 1238)
+
+**Umbrella card for the 2026-08-08 feature-completeness push** (owner: "as feature complete as possible,
+including features not yet included like pivotgrid, chart, reporting"). Not work itself — the map, so the
+individual cards do not each re-litigate the same questions.
+
+**The gap set, as verified against the code on 2026-08-08** (projector emits ListView + DetailView only;
+seven editors exist; reporting renders server-side but has no UI): CRUD-001 (1231) new-object UI, the
+server half already proven by GAP-003; LOOKUP-001 (1232) write-capable lookup, which also closes PH2-005
+(541) and unblocks GAP-010 (559); CHART-001 (1228), whose aggregation path is already wire-proven via
+`$apply`; RPT-001 (1230) client reporting UI over a renderer that already ships; EDIT-001 (1233) editor
+inventory, audit first because it sizes the rest; CRUD-002 (1235) inline nested editing, needs CRUD-001;
+EXPORT-001 (1236) list export, cheaper after RPT-001; PIVOT-001 (1227), aggregation decision first;
+DASH-001 (1229) as the capstone after chart and/or pivot; FILE-001 (1234), needs a storage decision;
+SCHED-001 (1237) parked in Backlog with no demand signal; and BUG-008 (1226), a pre-existing defect that
+LOOKUP-001 inherits.
+
+**Suggested order and why:** CRUD-001 → LOOKUP-001 → CHART-001 → RPT-001. That front-loads the items
+reusing proven server capability (create endpoint, `$apply` aggregation, report renderer) and defers those
+needing a design decision first (pivot aggregation, file storage, export ownership).
+
+**Standing decisions that apply to every card here, so they are stated once:**
+- **The server holds the data.** No feature may pull an unbounded row set to the client. Order is 55k rows;
+  GRID-002 set the precedent with `$apply` and a `RowCap` hybrid, and anything aggregating (chart, pivot,
+  export) follows it or explains why not.
+- **Heavy rendering goes off the request path** (MIG-002 boundary B): reports and exports enqueue to the
+  JobServer, they do not run inline in the API.
+- **Never assume DevExpress API surface** — dxdocs or installed 26.1 source before writing the code, and say
+  so explicitly when a claim is unverified.
+- **Every gap gets a card before it gets code**, cited in TODO.md so board and file cannot drift (the
+  2026-08-08 backfill exists because that stopped happening once already).
+
+#### CRUD-001: New-object creation UI (the client half of GAP-003) (ID: 1231)
+
+**The server half is done and proven** — GAP-003 (card 544) shipped the create endpoint with the 422
+validation contract. There is no client UI to reach it: the list view offers no New action and there is no
+blank DetailView form.
+
+Scope: a New action on `XafListView`, a DetailView bound to an unsaved object, save through the existing
+create endpoint, and honest handling of the **422 validation response** the save contract already defines
+(`docs/notes/save-contract.md`) — field-level messages next to the editors, not a toast.
+
+Smallest genuinely useful increment toward feature-complete CRUD, because it reuses the shipped editor map,
+layout renderer and endpoint. First implementation target of the push. Sizing: small-to-medium.
+
+#### LOOKUP-001: Write-capable lookup editor (pick an existing related object) (ID: 1232)
+
+**Named as the top gap by MIG-002 (558) and the missing consumer PH2-005 (541) was deferred waiting for.**
+`LookupEditor.razor` is display-only — it degrades a reference to a badge, so a DetailView cannot change
+which object a reference points at. Reference *writes* already work server-side (GAP-001 resolves keys via
+`IObjectSpace.GetObjectByKey`), so this is the client editor plus a candidate feed.
+
+- **The candidate feed** is exactly PH2-005's `/api/lookup/{type}` read-only endpoint, deferred as YAGNI
+  *because this editor did not exist*. Build them together — that closes 541 honestly instead of leaving it
+  deferred forever, and avoids widening `options.BusinessObject<T>()` per lookup target.
+- **The editor** — a searchable dropdown bound to the projected `LookupMetadata`, writing the key back
+  through the existing save path.
+
+**[[BUG-008]] interaction:** a lookup whose display member resolves to an entity has no display string, so
+this editor would show blank entries for exactly those columns. Fix BUG-008 first, or scope the picker to
+lookups with a primitive display member and say so. Unblocks GAP-010's Link picker. **Create-new-from-lookup
+stays out of scope** (owner: not important). Sizing: medium.
+
+#### CHART-001: Project and render XAF chart views (ID: 1228)
+
+**Gap, verified 2026-08-08:** no chart support — the projector emits only ListView/DetailView and nothing
+references a chart view or `DxChart`.
+
+**Server:** project the chart view model (series, argument/value data members, series type, diagram type,
+view criteria) as a new `ViewMetadata.Type`. Read the model interfaces from installed 26.1 source before
+designing the DTO. **Client:** render with `DxChart`. Charts aggregate, so the [[PIVOT-001]] question
+applies but is easier: OData `$apply=groupby((x),aggregate(...))` already returns grouped data and
+`ODataGridDataSource.GetGroupInfoAsync` proved it live (buckets summed exactly to the filtered total). Feed
+series straight from `$apply`; a 55k-row chart must never download 55k rows.
+
+Natural early target because the aggregation path already exists and is wire-proven. Sizing: medium.
+
+#### RPT-001: Client-side reporting — list, parameterize, preview and download reports (ID: 1230)
+
+**Half of this already ships — the half nobody can reach from the UI.** SVR-001 built real rendering in the
+JobServer: `ReportRenderService` uses XAF's `IReportExportService` to render a stored `ReportDataV2` layout
+to PDF, `ReportArtifact` stores the bytes, and a dedicated download endpoint exists. But it is driven only
+by a background job (`EmailOrdersReportCommand`) rendering **exactly one hard-coded report** (`OrdersReport`,
+PDF, `criteria: null`). The client has no reporting UI at all.
+
+Missing: **list the available reports** (project the `ReportDataV2` catalogue as metadata); **parameters +
+criteria** (reuse the DetailView editor machinery for a parameter form — note the `xaf-reporting` traps,
+the parameter object's `Visible=false` gotcha and `GetCriteria()` vs `FilterString`, to be verified against
+dxdocs, not memory); **run + deliver** via the existing Hangfire dispatch, since SVR-001's boundary decision
+was explicit that report rendering must not run inline on the API request path; and **run a report for the
+current view/selection**, passing the grid's criteria through.
+
+**Do not re-implement rendering** — service, artifact storage and download path exist and are proven. High
+value: makes shipped-but-unreachable capability usable. Sizing: medium.
+
+#### EDIT-001: Editor inventory + the missing scalar editors (ID: 1233)
+
+**MIG-002 calls for an editor inventory and it has never been done.** Verified 2026-08-08, the shipped set
+is exactly seven: Bool, Date, Enum, Image, Lookup, Number, String. Anything else degrades to the
+unsupported-editor badge — graceful, but it means "feature complete" is currently unmeasurable.
+
+**Step 1 — the audit** (cheap, and it sizes everything else): enumerate the `PropertyEditor` types the
+reference module's views request and the `EditorAlias` values XAF can emit, and write the list down.
+`ClassifyDataType` is the funnel every member passes through, so the audit is "what hints could it emit,
+and which have no editor". **Step 2 — build what the audit justifies**, likely multiline memo, rich
+text/HTML, and formatted/masked variants; each needs its DevExpress counterpart checked in dxdocs first
+(`DxRichEdit`/`DxHtmlEditor` availability and licensing in the referenced packages is an open question, not
+an assumption).
+
+Deliberately a chore: the outcome is a written list plus however many small editors it justifies. Do the
+audit even if the editors are deferred — an unmeasured gap cannot be closed.
+
+#### CRUD-002: Inline nested-collection editing (ID: 1235)
+
+**Named by MIG-002 as a gap.** A nested tab is read/navigate only (BUG-002 filters it to OData-exposed child
+types), so an aggregated child collection — `Order.OrderItems` is the live example — cannot be edited from
+its master's DetailView.
+
+Scope: New/Edit/Delete on an aggregated nested grid through the existing save contract. GAP-010's rule
+governs: **aggregated (composite) children use New/Delete; non-aggregated (shared) use Link/Unlink** — and
+`LayoutNode.Aggregated` is already projected, so the client can tell them apart. This is the New/Delete
+half; GAP-010 (559) is the Link/Unlink half. Depends on [[CRUD-001]]. Sizing: medium.
+
+#### EXPORT-001: Export a list view to XLSX/PDF (ID: 1236)
+
+**Standard XAF list-view capability with no equivalent here.** Users expect to export the grid they are
+looking at, with its current filter, sort and grouping applied.
+
+The decision this turns on is **who renders the file**: `DxGrid`'s own client-side export is simplest but in
+server mode only ever sees the **current page** (25 rows of 55k) — a wrong answer dressed as a feature, and
+it must not ship without saying so. A server-side export honours the whole filtered set, and MIG-002's
+boundary argument puts heavy rendering off the request path, i.e. enqueue through the JobServer like
+[[RPT-001]] and deliver an artifact. Recommend the server route for correctness; if the grid's own export
+is used at all, restrict it to in-memory-mode views where it is complete. Verify `DxGrid`'s export surface
+against dxdocs before deciding. Sizing: medium, cheaper if RPT-001 lands first.
+
+#### PIVOT-001: Project and render XAF PivotGrid (analysis) views (ID: 1227)
+
+**Gap, verified 2026-08-08:** no pivot support — `ViewMetadataProjector` handles exactly two view kinds and
+a grep for `PivotGrid`/`AnalysisView` returns nothing.
+
+**Server:** project the pivot/analysis view model (field list: area, area index, summary type, data source
+criteria) as a new `ViewMetadata.Type`. The model interface and the shape of a saved pivot layout must be
+read from installed 26.1 source / dxdocs before anything is designed — do not infer.
+
+**Client:** render with `DxPivotGrid`. The question that decides this card's whole shape is **where
+aggregation happens**: DevExpress's Blazor pivot binds to a local collection, while this platform's premise
+is that the server holds the data. Evaluate, in order: OData `$apply=groupby(...)/aggregate(...)` driving a
+custom data source (the GRID-002 route); or a capped in-memory bind reusing `GridBinding.UseServerMode`'s
+`RowCap` decision. Probe the wire before committing. Sizing: large — settle the aggregation decision and
+write it down before implementing.
+
+#### DASH-001: Project and render DashboardViews (ID: 1229)
+
+**Deliberately skipped by GAP-004 and still open.** Navigation rule 1 is "ListView only", and
+`NavigationMetadataTests` actively *asserts* no DashboardView reaches the client menu. Closing this means
+changing that rule and that test, not just adding a projector branch.
+
+**Server:** project the dashboard's item layout (each item referencing another view — list, chart, pivot —
+plus position) as a new `ViewMetadata.Type`, then relax the navigation rule. **Client:** a container that
+lays out items and delegates each to its own view type's renderer, reusing `XafListView` unchanged for list
+items.
+
+**Sequencing:** the capstone of [[CHART-001]] and [[PIVOT-001]], not a prerequisite — a dashboard whose
+items can only be lists is worth little. The demo's Welcome dashboard is the ready-made live target.
+
+#### FILE-001: File attachment upload and download (ID: 1234)
+
+**Named by MIG-002, half-blocked by a deliberate earlier decision.** After BUG-001/UI-001 a `byte[]` member
+is display-only: it projects as `image` and renders as an `<img>` data-URI. There is no upload, and no
+support for the XAF FileAttachments module — though `Startup.cs:112` already auto-creates that module, so
+the server side is closer than it looks.
+
+Scope: an upload editor, a download path, and a storage decision. **MIG-002 is explicit that blobs must NOT
+stream inline through OData** — it calls for a file/blob storage service behind upload/download endpoints;
+honour that. Two rules this repo already holds apply directly: detect file type by **magic bytes, not
+extension** (`ImageEditor` already sniffs MIME that way), and validate at the trust boundary — uploads are
+untrusted input, so size limits and content-type checks are not optional simplifications.
+
+Sizing: medium, plus a storage decision (filesystem vs S3/Azure) that should be made explicitly rather than
+defaulted.
+
+#### SCHED-001: Scheduler view support (ID: 1237)
+
+**Gap, verified 2026-08-08.** The XAF Scheduler module is auto-created in `Startup.cs:112`, so the module
+loads, but nothing projects or renders a scheduler view.
+
+Scope: project the scheduler view's model (appointment source mappings — start, end, subject, resource) and
+render with `DxScheduler`, backed by an OData fetch windowed to the visible date range.
+
+**Kept in the board's Backlog lane, not Todo, deliberately:** unlike pivot/chart/reporting it has no demand
+signal here — the reference module does not exercise it, and MIG-002 lists scheduler only as a "check
+whether the target app uses it" item. Promote it when a real consumer appears rather than building it
+speculatively.
+
 
 _GAP-004 (nav menu, minimal scope) done 2026-07-12 — see `docs/DONE.md`._
 

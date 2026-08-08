@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/modernist-c0a8696c-8260-46ab-af4e-fbb8658f6d54/styles.css">
+<script src="_ds/modernist-c0a8696c-8260-46ab-af4e-fbb8658f6d54/_ds_bundle.js"></script>
+<style>
+body{margin:0}
+a{color:var(--color-accent-700)}a:hover{color:var(--color-accent)}
+@keyframes rise{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
+
+<sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
+  <form onSubmit="{{ doLogin }}" class="card" style="position:relative;width:400px;max-width:90vw;padding:var(--space-6);border-top:4px solid var(--color-accent);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;gap:var(--space-4)">
+    <div style="display:flex;align-items:center;gap:var(--space-3)">
+      <div style="width:44px;height:44px;background:var(--color-accent);display:flex;align-items:center;justify-content:center;color:var(--color-bg);font-family:var(--font-heading);font-weight:700;font-size:20px">X</div>
+      <div>
+        <h1 style="margin:0;font-size:26px;line-height:1.1">XafHeadless</h1>
+        <div style="font-size:12.5px;opacity:.6">A lightweight front end for XAF</div>
+      </div>
+    </div>
+    <div class="field"><label for="lg-u">User name</label><input class="input" id="lg-u" value="{{ loginUser }}" onChange="{{ setLoginUser }}"></input></div>
+    <div class="field"><label for="lg-p">Password</label><input class="input" id="lg-p" type="password" placeholder="Blank for the demo tenant" value="{{ loginPw }}" onChange="{{ setLoginPw }}"></input></div>
+    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    <div style="font-size:12px;opacity:.6;text-align:center">Demo credentials: Admin@company1.com · blank password</div>
+    <sc-if value="{{ showHints }}" hint-placeholder-val="{{ false }}"><div style="align-self:center;font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--color-neutral-100);border:1px solid var(--color-neutral-200);border-radius:0;padding:4px 12px">POST api/auth → JWT · sessionStorage</div></sc-if>
+  </form>
+</div>
+</sc-if>
+
+<sc-if value="{{ isApp }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100vh">
+  <nav class="nav" style="flex:none">
+    <span class="nav-brand">XafHeadless</span>
+    <span style="flex:1"></span>
+    <sc-if value="{{ showHints }}" hint-placeholder-val="{{ false }}"><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--color-neutral-100);border:1px solid var(--color-neutral-200);border-radius:0;padding:4px 12px">InteractiveAuto · Server ⇄ WASM</span></sc-if>
+    <span class="tag tag-accent-2">{{ roleLabel }}</span>
+    <span style="font-size:13.5px;opacity:.75">Admin@company1.com</span>
+    <button type="button" class="btn btn-ghost" onClick="{{ doLogout }}">Sign out</button>
+  </nav>
+  <div style="display:flex;flex:1;min-height:0">
+    <aside style="width:230px;flex:none;display:flex;flex-direction:column;gap:3px;padding:var(--space-4);border-right:2px solid var(--color-divider);overflow:auto">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.55;margin:var(--space-2) var(--space-3)">Navigation</div>
+      <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="5">
+        <button type="button" onClick="{{ item.onClick }}" style="{{ item.style }}" style-hover="{{ item.hoverStyle }}">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="{{ item.p1 }}"></path><path d="{{ item.p2 }}"></path><path d="{{ item.p3 }}"></path><path d="{{ item.p4 }}"></path></svg>
+          <span style="flex:1">{{ item.label }}</span>
+        </button>
+      </sc-for>
+      <div style="flex:1"></div>
+      <sc-if value="{{ showHints }}" hint-placeholder-val="{{ false }}"><div style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;opacity:.6;padding:0 var(--space-3);line-height:1.6">GET api/model/navigation<br></br>security-trimmed per role</div></sc-if>
+    </aside>
+    <main style="flex:1;min-width:0;overflow:auto;padding:var(--space-6)">
+
+      <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4)">
+          <h1 style="margin:0;font-size:34px">{{ viewCaption }}</h1>
+          <span class="tag tag-neutral">{{ countLabel }}</span>
+          <sc-if value="{{ isServerMode }}" hint-placeholder-val="{{ false }}"><span class="tag tag-outline">server mode</span></sc-if>
+          <span style="flex:1"></span>
+          <sc-if value="{{ hasReportCommand }}" hint-placeholder-val="{{ false }}">
+            <button type="button" class="btn btn-secondary" onClick="{{ emailReport }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"></path><path d="m2 7 10 6 10-6"></path></svg>
+              Email orders report</button>
+          </sc-if>
+          <button type="button" class="btn btn-primary" onClick="{{ newRecord }}">New {{ objectLabel }}</button>
+        </div>
+        <sc-if value="{{ showHints }}" hint-placeholder-val="{{ false }}"><div style="margin-bottom:var(--space-3)"><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--color-neutral-100);border:1px solid var(--color-neutral-200);border-radius:0;padding:4px 12px">{{ listApiHint }}</span></div></sc-if>
+        <div style="overflow-x:auto;background:var(--color-surface,transparent)">
+        <table class="table" style="min-width:980px">
+          <thead>
+            <tr>
+              <sc-for list="{{ columns }}" as="col" hint-placeholder-count="6"><th onClick="{{ col.onSort }}" style="cursor:pointer;white-space:nowrap;user-select:none">{{ col.label }}{{ col.sortMark }}</th></sc-for>
+              <sc-if value="{{ isJobs }}" hint-placeholder-val="{{ false }}"><th></th></sc-if>
+            </tr>
+            <tr>
+              <sc-for list="{{ columns }}" as="col"><th style="padding:4px 8px 10px"><input class="input" style="padding:5px 12px;font-size:12px;minWidth:70px" placeholder="Filter" value="{{ col.filterVal }}" onChange="{{ col.onFilter }}"></input></th></sc-for>
+              <sc-if value="{{ isJobs }}" hint-placeholder-val="{{ false }}"><th></th></sc-if>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+              <tr onClick="{{ row.onClick }}" style="cursor:pointer">
+                <sc-for list="{{ row.cells }}" as="cell">
+                  <td style="{{ cell.style }}">
+                    <sc-if value="{{ cell.isTag }}" hint-placeholder-val="{{ false }}"><span class="{{ cell.tagCls }}">{{ cell.text }}</span></sc-if>
+                    <sc-if value="{{ cell.isText }}" hint-placeholder-val="{{ true }}">{{ cell.text }}</sc-if>
+                  </td>
+                </sc-for>
+                <sc-if value="{{ row.showRunNow }}" hint-placeholder-val="{{ false }}"><td style="text-align:right"><button type="button" class="btn btn-ghost" style="padding:5px 14px;font-size:12.5px" onClick="{{ row.onRunNow }}">Run now</button></td></sc-if>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+        </div>
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-top:var(--space-4)">
+          <span style="font-size:13px;opacity:.65">{{ rangeLabel }}</span>
+          <span style="flex:1"></span>
+          <button type="button" class="btn btn-ghost" onClick="{{ prevPage }}">‹ Prev</button>
+          <button type="button" class="btn btn-ghost" onClick="{{ nextPage }}">Next ›</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+        <button type="button" class="btn btn-ghost" style="padding:5px 14px;font-size:12.5px;margin-bottom:var(--space-3)" onClick="{{ backToList }}">← {{ viewCaption }}</button>
+        <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4)">
+          <h1 style="margin:0;font-size:32px">{{ detailTitle }}</h1>
+          <span style="flex:1"></span>
+          <button type="button" class="btn btn-ghost" onClick="{{ backToList }}">Cancel</button>
+          <button type="button" class="btn btn-primary" onClick="{{ doSave }}">Save</button>
+        </div>
+        <sc-if value="{{ showHints }}" hint-placeholder-val="{{ false }}"><div style="margin-bottom:var(--space-3)"><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--color-neutral-100);border:1px solid var(--color-neutral-200);border-radius:0;padding:4px 12px">{{ detailApiHint }}</span></div></sc-if>
+        <sc-if value="{{ hasErrors }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--color-accent-100);border:1px solid var(--color-accent-300);color:var(--color-accent-800);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-4);margin-bottom:var(--space-4);font-size:13.5px">
+            <strong>422 Unprocessable Entity</strong> — validation failed on the members below (XAF RuleRequiredField, evaluated server-side).
+          </div>
+        </sc-if>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:var(--space-4);align-items:start">
+          <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+            <section class="card" style="display:flex;flex-direction:column;gap:var(--space-3)">
+              <div class="card-kicker">{{ g.title }}</div>
+              <sc-for list="{{ g.fields }}" as="f">
+                <div class="field">
+                  <label style="display:flex;align-items:center;gap:8px">{{ f.label }}<sc-if value="{{ f.lookup }}" hint-placeholder-val="{{ false }}"><span class="tag tag-outline" style="font-size:10px;padding:1px 8px">lookup</span></sc-if></label>
+                  <input class="input" style="{{ f.inputStyle }}" value="{{ f.value }}" onChange="{{ f.onChange }}"></input>
+                  <sc-if value="{{ f.error }}" hint-placeholder-val="{{ false }}"><div style="color:var(--color-accent-700);font-size:12px;margin-top:4px">{{ f.error }}</div></sc-if>
+                </div>
+              </sc-for>
+            </section>
+          </sc-for>
+        </div>
+        <sc-if value="{{ hasTabs }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:var(--space-2);margin:var(--space-6) 0 var(--space-3)">
+            <sc-for list="{{ tabs }}" as="t">
+              <button type="button" onClick="{{ t.onClick }}" style="{{ t.style }}" style-hover="{{ t.hoverStyle }}">{{ t.label }}<span style="opacity:.6;margin-left:8px;font-size:12px">{{ t.count }}</span></button>
+            </sc-for>
+          </div>
+          <div style="overflow-x:auto">
+          <table class="table" style="min-width:640px">
+            <thead><tr><sc-for list="{{ tabCols }}" as="tc"><th style="white-space:nowrap">{{ tc.label }}</th></sc-for></tr></thead>
+            <tbody>
+              <sc-for list="{{ tabRows }}" as="trow">
+                <tr>
+                  <sc-for list="{{ trow.cells }}" as="cell">
+                    <td style="{{ cell.style }}">
+                      <sc-if value="{{ cell.isTag }}" hint-placeholder-val="{{ false }}"><span class="{{ cell.tagCls }}">{{ cell.text }}</span></sc-if>
+                      <sc-if value="{{ cell.isText }}" hint-placeholder-val="{{ true }}">{{ cell.text }}</sc-if>
+                    </td>
+                  </sc-for>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+          </div>
+        </sc-if>
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ toastText }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--color-text);color:var(--color-bg);padding:12px 22px;border-radius:0;box-shadow:var(--shadow-lg);font-size:13.5px;animation:rise .25s ease;z-index:60;white-space:nowrap">{{ toastText }}</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Admin&quot;,&quot;Sales&quot;],&quot;default&quot;:&quot;Admin&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Security demo&quot;,&quot;description&quot;:&quot;Sales sees a security-trimmed model: fewer nav items, cost/total members absent&quot;},&quot;showDevHints&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Presentation&quot;,&quot;description&quot;:&quot;Show API-traffic chips (endpoints behind each screen)&quot;}}">
+class Component extends DCLogic {
+  state = { screen:'login', u:'Admin@company1.com', pw:'', nav:'Orders', mode:'list', page:0, sortKey:null, sortDir:1, filters:{}, detailIdx:null, isNew:false, edits:{}, errors:{}, tab:0, toast:null };
+
+  _ensure() {
+    if (this._d) return this._d;
+    let s = 7;
+    const R = () => (s = s * 16807 % 2147483647) / 2147483647;
+    const pick = a => a[Math.floor(R() * a.length)];
+    const d2 = (m, d) => ('0'+m).slice(-2) + '/' + ('0'+d).slice(-2) + '/2026';
+    const CU = ['Sheffield Hardware','ProSellers Inc','Hanover Outfitters','Delta Supply Co','Marable Foods','Kingsview Retail','Blue Finch Goods','Orchard & Vine','Tullamore Trading','Sanford & Sons'];
+    const CITY = [['Portland','OR'],['Austin','TX'],['Columbus','OH'],['Reno','NV'],['Albany','NY'],['Boise','ID'],['Savannah','GA'],['Tulsa','OK'],['Madison','WI'],['Provo','UT']];
+    const orders = [];
+    for (let i = 0; i < 48; i++) {
+      const m = 1 + Math.floor(R() * 7), day = 1 + Math.floor(R() * 27);
+      const status = pick(['New','In Transit','Delivered','Delivered','In Transit','On Hold','Delivered','Refund']);
+      const sale = Math.round((300 + R() * 8700) * 100) / 100;
+      orders.push({ invoice:'INV-2026-'+(1040+i*3), customer:pick(CU), store:pick(['Downtown','Riverside','North Mall','Harbor','Airport']), po:'PO-'+(5100+i*7), orderDate:d2(m,day), shipDate: status==='New' ? '' : d2(m, Math.min(28, day+4)), saleAmount:sale, totalAmount:Math.round(sale*108)/100, shipMethod:pick(['Ground','Air','Courier','Freight']), status });
+    }
+    const customers = CU.map((n, i) => ({ name:n, city:CITY[i][0], state:CITY[i][1], annualRevenue:Math.round(1200000 + R()*38000000), totalStores:2 + Math.floor(R()*38), totalEmployees:40 + Math.floor(R()*900), status: R() < 0.85 ? 'Active' : 'Suspended' }));
+    const FN = ['Nora','Miles','Petra','Owen','Ines','Felix','Dana','Ravi','Lena','Marco','Aiko','Tomas'];
+    const LN = ['Calloway','Brandt','Osei','Lindqvist','Moreau','Katz','Ferreira','Nair','Sotelo','Weiss','Tanaka','Hurst'];
+    const TITLES = ['Sales Manager','Account Executive','Support Engineer','HR Generalist','Field Technician','Data Analyst','Logistics Lead','Regional Director'];
+    const DEPTS = ['Sales','Sales','Support','Human Resources','Field Ops','Operations','Logistics','Sales'];
+    const employees = FN.map((f, i) => { const t = i % TITLES.length; return { fullName: f+' '+LN[i], title:TITLES[t], department:DEPTS[t], email:(f+'.'+LN[i]+'@company1.com').toLowerCase(), hireDate:d2(1+Math.floor(R()*12) % 12 || 1, 1+Math.floor(R()*27)).replace('/2026','/'+(2015+Math.floor(R()*10))), status: R() < 0.8 ? 'Salaried' : 'Contract' }; });
+    const PRODS = [['HD Video Player','Video Players',82,169],['SuperLED 42','Monitors',195,405],['SuperLED 50','Monitors',245,529],['DesktopLCD 19','Monitors',72,145],['DesktopLCD 21','Monitors',95,185],['Projector Plus HT','Projectors',310,720],['Projector Rear 4K','Projectors',480,1105],['EnviroCare Max','Automation',118,255],['EnviroCare Mini','Automation',64,139],['Station Hub 8','Automation',150,320],['HD Camcorder Pro','Video Players',260,569],['Remote Panel X','Automation',48,99]];
+    const products = PRODS.map(p => ({ name:p[0], category:p[1], cost:p[2], salePrice:p[3], inventory:Math.floor(R()*400), availability: R() < 0.85 ? 'Available' : 'Sold Out' }));
+    const jobs = [
+      { name:'EmailOrdersReport', command:'EmailOrdersReport', cron:'0 7 * * MON', enabled:'Enabled', lastRun:'08/03/2026 07:00', lastResult:'Succeeded' },
+      { name:'OrderSummary', command:'OrderSummary', cron:'0 * * * *', enabled:'Enabled', lastRun:'08/07/2026 21:00', lastResult:'Succeeded' },
+      { name:'ReseedFixtures', command:'ReseedTestFixtures', cron:'— (manual)', enabled:'Disabled', lastRun:'07/12/2026 09:14', lastResult:'Failed' }
+    ];
+    const money = { t:'money' };
+    this._d = { orders, customers, employees, products, jobs, viewDefs: {
+      Orders: { cap:'Orders', obj:'Order', rows:orders, server:1, bigTotal:54342, required:'invoice', command:1,
+        icon:['M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z','M3 6h18','M16 10a4 4 0 0 1-8 0','M0 0'],
+        cols:[{k:'invoice',l:'Invoice Number'},{k:'customer',l:'Customer',lookup:1},{k:'store',l:'Store'},{k:'orderDate',l:'Order Date'},{k:'shipDate',l:'Ship Date'},{k:'saleAmount',l:'Sale Amount',t:'money'},{k:'totalAmount',l:'Total Amount',t:'money',adminOnly:1},{k:'shipMethod',l:'Ship Method'},{k:'status',l:'Status',t:'tag'}] },
+      Customers: { cap:'Customers', obj:'Customer', rows:customers, required:'name',
+        icon:['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2','M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8','M22 21v-2a4 4 0 0 0-3-3.87','M16 3.13a4 4 0 0 1 0 7.75'],
+        cols:[{k:'name',l:'Name'},{k:'city',l:'City'},{k:'state',l:'State'},{k:'annualRevenue',l:'Annual Revenue',t:'money0',adminOnly:1},{k:'totalStores',l:'Stores',t:'num'},{k:'totalEmployees',l:'Employees',t:'num'},{k:'status',l:'Status',t:'tag'}] },
+      Employees: { cap:'Employees', obj:'Employee', rows:employees, required:'fullName', adminOnly:1,
+        icon:['M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2','M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8','M0 0','M0 0'],
+        cols:[{k:'fullName',l:'Full Name'},{k:'title',l:'Title'},{k:'department',l:'Department',lookup:1},{k:'email',l:'Email'},{k:'hireDate',l:'Hire Date'},{k:'status',l:'Status',t:'tag'}] },
+      Products: { cap:'Products', obj:'Product', rows:products, required:'name',
+        icon:['M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z','M3.3 7 12 12l8.7-5','M12 22V12','M0 0'],
+        cols:[{k:'name',l:'Name'},{k:'category',l:'Category',lookup:1},{k:'cost',l:'Cost',t:'money',adminOnly:1},{k:'salePrice',l:'Sale Price',t:'money'},{k:'inventory',l:'Inventory',t:'num'},{k:'availability',l:'Availability',t:'tag'}] },
+      Jobs: { cap:'Job Definitions', obj:'JobDefinition', rows:jobs, required:'name', adminOnly:1, runNow:1,
+        icon:['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20','M12 6v6l4 2','M0 0','M0 0'],
+        cols:[{k:'name',l:'Name'},{k:'command',l:'Command'},{k:'cron',l:'Cron'},{k:'enabled',l:'Enabled',t:'tag'},{k:'lastRun',l:'Last Run'},{k:'lastResult',l:'Last Result',t:'tag'}] }
+    }};
+    return this._d;
+  }
+
+  _fmt(col, v) {
+    if (v === '' || v == null) return '';
+    if (col.t === 'money') return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+    if (col.t === 'money0') return '$' + Number(v).toLocaleString('en-US');
+    if (col.t === 'num') return Number(v).toLocaleString('en-US');
+    return String(v);
+  }
+  _tagCls(v) {
+    const good = ['Delivered','Active','Enabled','Succeeded','Available','Salaried'];
+    const warm = ['In Transit','Contract'];
+    if (good.includes(v)) return 'tag tag-accent-2';
+    if (warm.includes(v)) return 'tag tag-accent';
+    if (['On Hold','Refund','Suspended','Failed','Sold Out'].includes(v)) return 'tag tag-outline';
+    return 'tag tag-neutral';
+  }
+  _cells(cols, rec) {
+    return cols.map(c => {
+      const raw = rec[c.k], text = this._fmt(c, raw);
+      const num = c.t === 'money' || c.t === 'money0' || c.t === 'num';
+      return { text: text === '' ? '—' : text, isTag: c.t === 'tag' && text !== '', isText: c.t !== 'tag', tagCls: this._tagCls(text), style: { whiteSpace:'nowrap', textAlign: num ? 'right' : 'left', fontVariantNumeric:'tabular-nums' } };
+    });
+  }
+  _toast(t) { clearTimeout(this._tt); this.setState({ toast:t }); this._tt = setTimeout(() => this.setState({ toast:null }), 3400); }
+
+  renderVals() {
+    const d = this._ensure(), st = this.state;
+    const role = this.props.role ?? 'Admin';
+    const showHints = this.props.showDevHints ?? true;
+    const isAdmin = role === 'Admin';
+    const vd = d.viewDefs[st.nav];
+    const visCols = vd.cols.filter(c => isAdmin || !c.adminOnly);
+
+    const navItems = Object.keys(d.viewDefs).filter(k => isAdmin || !d.viewDefs[k].adminOnly).map(k => {
+      const v = d.viewDefs[k], active = k === st.nav;
+      return { label:v.cap, p1:v.icon[0], p2:v.icon[1], p3:v.icon[2], p4:v.icon[3],
+        style: { display:'flex', alignItems:'center', gap:'11px', padding:'10px 16px', borderRadius:'0', border:'none', width:'100%', textAlign:'left', font:'inherit', fontSize:'14.5px', cursor:'pointer', background: active ? 'var(--color-accent)' : 'transparent', color: active ? 'var(--color-bg)' : 'inherit', fontWeight: active ? 600 : 400 },
+        hoverStyle: { background: active ? 'var(--color-accent-600)' : 'var(--color-accent-100)' },
+        onClick: () => this.setState({ nav:k, mode:'list', page:0, sortKey:null, filters:{}, detailIdx:null, edits:{}, errors:{}, tab:0 }) };
+    });
+
+    // list pipeline
+    let list = vd.rows.slice();
+    const flt = st.filters;
+    const filterActive = Object.keys(flt).some(k => flt[k]);
+    for (const k of Object.keys(flt)) {
+      if (!flt[k]) continue;
+      const col = vd.cols.find(c => c.k === k);
+      list = list.filter(r => this._fmt(col, r[k]).toLowerCase().includes(flt[k].toLowerCase()));
+    }
+    if (st.sortKey) {
+      const col = vd.cols.find(c => c.k === st.sortKey), num = col && (col.t || '').match(/money|num/);
+      list.sort((a, b) => { const x = a[st.sortKey], y = b[st.sortKey]; return (num ? x - y : String(x).localeCompare(String(y))) * st.sortDir; });
+    }
+    const pageSize = 12, pages = Math.max(1, Math.ceil(list.length / pageSize));
+    const page = Math.min(st.page, pages - 1);
+    const slice = list.slice(page * pageSize, page * pageSize + pageSize);
+    const totalShown = vd.server && !filterActive ? vd.bigTotal : list.length;
+
+    const columns = visCols.map(c => ({ label:c.l,
+      sortMark: st.sortKey === c.k ? (st.sortDir > 0 ? ' ↑' : ' ↓') : '',
+      filterVal: flt[c.k] || '',
+      onFilter: e => this.setState(s => ({ filters: { ...s.filters, [c.k]: e.target.value }, page:0 })),
+      onSort: () => this.setState(s => ({ sortKey:c.k, sortDir: s.sortKey === c.k ? -s.sortDir : 1, page:0 })) }));
+
+    const rows = slice.map(rec => ({
+      cells: this._cells(visCols, rec),
+      showRunNow: !!vd.runNow,
+      onRunNow: e => { e.stopPropagation(); this._toast('202 Accepted · Run Now → ' + rec.command + ' enqueued (Hangfire, JobServer :5300)'); },
+      onClick: () => this.setState({ mode:'detail', detailIdx: vd.rows.indexOf(rec), isNew:false, edits:{}, errors:{}, tab:0 })
+    }));
+
+    // detail
+    const rec = st.isNew ? {} : (st.detailIdx != null ? vd.rows[st.detailIdx] : null);
+    const mkField = (c, required) => {
+      const k = c.k, val = st.edits[k] !== undefined ? st.edits[k] : (rec && rec[k] != null ? rec[k] : '');
+      return { label: c.l + (required ? ' *' : ''), lookup: !!c.lookup, value: String(val), error: st.errors[k] || '',
+        inputStyle: st.errors[k] ? { borderColor:'var(--color-accent)' } : {},
+        onChange: e => { const v = e.target.value; this.setState(s => ({ edits: { ...s.edits, [k]: v } })); } };
+    };
+    let groups = [], tabs = [], tabCols = [], tabRows = [], hasTabs = false, detailTitle = '', detailApiHint = '';
+    if (st.mode === 'detail' && (rec || st.isNew)) {
+      const col = k => vd.cols.find(c => c.k === k);
+      if (st.nav === 'Orders') {
+        groups = [
+          { title:'Order', fields: [mkField(col('invoice'), true), mkField({ k:'po', l:'PO Number' }), mkField(col('orderDate')), mkField(col('shipDate')), mkField(col('shipMethod')), mkField(col('status'))] },
+          { title:'Customer', fields: [mkField(col('customer')), mkField(col('store'))] }
+        ];
+        if (isAdmin) groups.push({ title:'Totals', fields: [mkField(col('saleAmount')), mkField(col('totalAmount'))] });
+        if (!st.isNew) {
+          hasTabs = true;
+          const seed = parseInt((rec.invoice || '0').replace(/\D/g, ''), 10) || 1;
+          const items = [];
+          const n = 2 + seed % 4;
+          for (let i = 0; i < n; i++) { const p = d.products[(seed + i * 5) % d.products.length]; const units = 1 + (seed + i) % 6; items.push({ product:p.name, category:p.category, units, price:p.salePrice, total: Math.round(p.salePrice * units * 100) / 100 }); }
+          const payments = [{ method:'Visa ···· ' + (4100 + seed % 800), date: rec.shipDate || rec.orderDate, amount: rec.totalAmount, status:'Cleared' }];
+          const tabDefs = [
+            { label:'Order Items', count:items.length, cols:[{k:'product',l:'Product'},{k:'category',l:'Category'},{k:'units',l:'Units',t:'num'},{k:'price',l:'Unit Price',t:'money'},{k:'total',l:'Total',t:'money'}], rows:items },
+            { label:'Payments', count:payments.length, cols:[{k:'method',l:'Method'},{k:'date',l:'Date'},{k:'amount',l:'Amount',t:'money'},{k:'status',l:'Status',t:'tag'}], rows:payments }
+          ];
+          tabs = tabDefs.map((t, i) => ({ label:t.label, count:t.count,
+            style: { padding:'8px 18px', borderRadius:'0', border:'1px solid ' + (st.tab === i ? 'var(--color-accent)' : 'var(--color-neutral-300)'), background: st.tab === i ? 'var(--color-accent)' : 'transparent', color: st.tab === i ? 'var(--color-bg)' : 'inherit', font:'inherit', fontSize:'13.5px', cursor:'pointer' },
+            hoverStyle: { background: st.tab === i ? 'var(--color-accent-600)' : 'var(--color-accent-100)' },
+            onClick: () => this.setState({ tab:i }) }));
+          const at = tabDefs[Math.min(st.tab, 1)];
+          tabCols = at.cols.map(c => ({ label:c.l }));
+          tabRows = at.rows.map(r => ({ cells: this._cells(at.cols, r) }));
+        }
+      } else {
+        groups = [{ title:'Details', fields: visCols.map(c => mkField(c, c.k === vd.required)) }];
+      }
+      detailTitle = st.isNew ? 'New ' + vd.obj : String(rec[visCols[0].k] || vd.obj);
+      detailApiHint = 'GET api/model/views/' + vd.obj + '_DetailView · POST api/save/' + vd.obj + (st.isNew ? '' : '/' + (100 + st.detailIdx));
+    }
+
+    return {
+      isLogin: st.screen === 'login', isApp: st.screen === 'app',
+      loginUser: st.u, loginPw: st.pw,
+      setLoginUser: e => this.setState({ u:e.target.value }),
+      setLoginPw: e => this.setState({ pw:e.target.value }),
+      doLogin: e => { e.preventDefault(); this.setState({ screen:'app', mode:'list', nav:'Orders' }); this._toast('200 OK · JWT issued for ' + (st.u || 'Admin@company1.com') + ' · tenant company1'); },
+      doLogout: () => this.setState({ screen:'login', mode:'list', nav:'Orders', filters:{}, page:0 }),
+      roleLabel: role, showHints,
+      navItems,
+      isList: st.mode === 'list', isDetail: st.mode === 'detail',
+      viewCaption: vd.cap, objectLabel: vd.obj,
+      isServerMode: !!vd.server, isJobs: !!vd.runNow, hasReportCommand: !!vd.command,
+      countLabel: totalShown.toLocaleString('en-US') + ' rows' + (filterActive ? ' · filtered' : ''),
+      listApiHint: 'GET api/odata/' + vd.obj + '?$top=12&$skip=' + page * pageSize + (filterActive ? "&$filter=contains(tolower(…),'…')" : '') + (st.sortKey ? '&$orderby=…' : ''),
+      columns, rows,
+      rangeLabel: list.length === 0 ? 'No rows match the filter' : (page * pageSize + 1) + '–' + Math.min(list.length, (page + 1) * pageSize) + ' of ' + totalShown.toLocaleString('en-US') + (vd.server ? ' · hybrid grid: server paging over OData $apply' : ' · in-memory (≤ 5,000 rows)'),
+      prevPage: () => this.setState(s => ({ page: Math.max(0, s.page - 1) })),
+      nextPage: () => this.setState(s => ({ page: Math.min(pages - 1, s.page + 1) })),
+      newRecord: () => this.setState({ mode:'detail', isNew:true, detailIdx:null, edits:{}, errors:{}, tab:0 }),
+      emailReport: () => this._toast('202 Accepted · EmailOrdersReport enqueued → Hangfire (JobServer :5300) · report → PDF → email'),
+      backToList: () => this.setState({ mode:'list', detailIdx:null, isNew:false, edits:{}, errors:{} }),
+      detailTitle, detailApiHint, groups, hasTabs, tabs, tabCols, tabRows,
+      hasErrors: Object.keys(st.errors).length > 0,
+      doSave: () => {
+        const req = vd.required;
+        const val = st.edits[req] !== undefined ? st.edits[req] : (rec ? rec[req] : '');
+        if (!String(val || '').trim()) { this.setState({ errors: { [req]: 'Required — RuleRequiredField (server-side IValidator)' } }); return; }
+        if (st.isNew) {
+          const nr = {}; visCols.forEach(c => nr[c.k] = st.edits[c.k] !== undefined ? st.edits[c.k] : '');
+          vd.rows.unshift(nr);
+          this.setState({ mode:'list', isNew:false, edits:{}, errors:{}, page:0 });
+          this._toast('201 Created · server-generated key returned');
+        } else {
+          Object.keys(st.edits).forEach(k => { rec[k] = st.edits[k]; });
+          this.setState({ mode:'list', edits:{}, errors:{} });
+          this._toast('200 OK · partial member write saved (validated)');
+        }
+      },
+      toastText: st.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+/* ============================================================================
+   Modernist theme for XafHeadless (Blazor)
+   Drop into XafHeadless.Web/wwwroot/ and link it in App.razor AFTER
+   bootstrap.min.css and app.css so its overrides win:
+     <link rel="stylesheet" href="modernist-theme.css" />
+   Source of truth: reference/modernist-design-system.css (full component layer)
+   ========================================================================= */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap');
+
+:root {
+  /* — Modernist tokens — */
+  --color-bg: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-text: #201e1d;
+  --color-accent: #ec3013;
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+
+  --color-neutral-100: #f8f4f4; --color-neutral-200: #eae7e7; --color-neutral-300: #d7d3d3;
+  --color-neutral-400: #bab6b6; --color-neutral-500: #9b9797; --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d; --color-neutral-800: #444141; --color-neutral-900: #2d2b2b;
+
+  --color-accent-100: #fff2ef; --color-accent-200: #ffe0d9; --color-accent-300: #ffc4b8;
+  --color-accent-400: #ff9783; --color-accent-500: #ff563c; --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800; --color-accent-800: #7c1405; --color-accent-900: #4d170e;
+
+  --font-heading: "Archivo", system-ui, sans-serif;
+  --font-heading-weight: 800;
+  --font-body: "Archivo", system-ui, sans-serif;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px;
+  --radius: 0px; /* Modernist: zero radius everywhere, on purpose */
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
+
+  /* — Bootstrap variable remap (app.css chrome reads --bs-*) — */
+  --bs-primary: var(--color-accent);
+  --bs-body-bg: var(--color-bg);
+  --bs-body-color: var(--color-text);
+  --bs-body-font-family: var(--font-body);
+  --bs-border-color: var(--color-divider);
+  --bs-border-radius: 0;
+  --bs-border-radius-sm: 0;
+  --bs-border-radius-lg: 0;
+  --bs-tertiary-bg: var(--color-bg);
+  --bs-secondary-color: var(--color-neutral-600);
+  --bs-link-color: var(--color-accent-700);
+  --bs-link-hover-color: var(--color-accent-800);
+}
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+}
+a, .btn-link { color: var(--color-accent-700); text-underline-offset: 3px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* — App chrome (.xaf-* classes from app.css) — */
+.xaf-topbar {
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: none;
+  border-bottom: 2px solid var(--color-divider) !important;
+}
+.xaf-topbar .fw-bold {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 18px;
+  letter-spacing: -0.015em;
+}
+.xaf-sidebar {
+  background: var(--color-bg);
+  border-right: 2px solid var(--color-divider) !important;
+}
+.xaf-navmenu a {
+  border-radius: 0;              /* app.css sets 6px — kill it */
+  color: var(--color-text);
+  font-size: 14px;
+  transition: none;              /* Modernist is flat and immediate */
+}
+.xaf-navmenu a:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.xaf-navmenu a.active {
+  background: transparent;
+  color: var(--color-accent);
+  font-weight: var(--font-heading-weight);
+  box-shadow: inset 3px 0 0 var(--color-accent); /* flush-left rule instead of a filled pill */
+}
+
+/* — Login card — */
+.xaf-login-card {
+  border: 2px solid var(--color-divider);
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--color-bg);
+}
+.xaf-login-card h1 { text-align: left !important; } /* Modernist: never center */
+
+/* — Buttons (Bootstrap + DevExpress DxButton renders .btn) — */
+.btn {
+  border-radius: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 14px;
+  justify-content: flex-start;   /* labels flush left, even in wide buttons */
+  text-align: left;
+}
+.btn-primary, .dxbl-btn.dxbl-btn-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-bg);
+}
+.btn-primary:hover, .dxbl-btn.dxbl-btn-primary:hover { background: var(--color-accent-600); border-color: var(--color-accent-600); }
+.btn-primary:active, .dxbl-btn.dxbl-btn-primary:active { background: var(--color-accent-700); border-color: var(--color-accent-700); }
+.btn:focus, .btn:active:focus, .form-control:focus {
+  box-shadow: none;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* — Inputs (Bootstrap .form-control + DevExpress text boxes) — */
+.form-control, .dxbl-text-edit, .dxbl-text-edit input {
+  background: var(--color-surface);
+  border-color: var(--color-divider);
+  border-radius: 0;
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  font-size: 14px;
+}
+.form-control:hover, .dxbl-text-edit:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.form-control:focus, .dxbl-text-edit.dxbl-focused { border-color: var(--color-accent); box-shadow: none; }
+.xaf-item .form-label {
+  font-weight: 400;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+
+/* — Validation (keep semantics, retheme colors) — */
+.valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-neutral-600); }
+.invalid { outline: 1px solid var(--color-accent-700); }
+.validation-message { color: var(--color-accent-700); }
+
+/* — Grid / tables (DevExpress DxGrid + plain .table) — */
+.table, .dxbl-grid { font-size: 14px; --bs-table-bg: transparent; }
+.table th, .dxbl-grid .dxbl-grid-header {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  background: var(--color-bg);
+  border-bottom: 2px solid var(--color-divider);
+}
+.table td, .dxbl-grid td { border-bottom: 1px solid var(--color-divider); }
+.table tbody tr:hover, .dxbl-grid tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+
+/* — Cards / images — */
+.card { border-radius: 0; background: var(--color-surface); border: 0; }
+.xaf-image { border-radius: 0; border: 1px solid var(--color-divider); filter: grayscale(1) contrast(1.08); }

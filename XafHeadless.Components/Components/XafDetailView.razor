@@ -42,7 +42,10 @@
         }
 
         <div class="xaf-savebar mb-3">
-            <DxButton Text="Save" Click="OnSave" Enabled="@(changes.Count > 0 && !saving)" />
+            @* Modernist: Save is THE primary command -- solid accent; every other command is
+               secondary (transparent, 1px divider border) via the theme. *@
+            <DxButton Text="Save" Click="OnSave" Enabled="@(changes.Count > 0 && !saving)"
+                      RenderStyle="ButtonRenderStyle.Primary" />
             <DxButton Text="Cancel" Click="OnCancel" RenderStyle="ButtonRenderStyle.Secondary"
                       Enabled="@(changes.Count > 0)" />
             <DxButton Text="Order summary" Click="OnOrderSummary" RenderStyle="ButtonRenderStyle.Info"

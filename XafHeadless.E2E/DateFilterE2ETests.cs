@@ -101,7 +101,11 @@ public class DateFilterE2ETests : PlaywrightFixture {
     // captions so column-order/model changes don't silently shift the assertion to a wrong column.
     async Task<List<string>> OrderDateCellsAsync() {
         var headers = await Page.Locator(".dxbl-grid-table thead th").AllInnerTextsAsync();
-        var idx = headers.Select((h, i) => (h, i)).First(x => x.h.Trim() == "Order Date").i;
+        // Case-INSENSITIVE: the Modernist theme renders grid headers with `text-transform: uppercase`,
+        // and innerText returns the TRANSFORMED text ("ORDER DATE"), unlike textContent. The assertion
+        // is about column identity, not casing.
+        var idx = headers.Select((h, i) => (h, i))
+            .First(x => string.Equals(x.h.Trim(), "Order Date", StringComparison.OrdinalIgnoreCase)).i;
         var texts = new List<string>();
         var rows = Page.Locator(DataRows);
         var count = await rows.CountAsync();

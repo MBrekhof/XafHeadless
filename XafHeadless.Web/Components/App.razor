@@ -16,6 +16,10 @@
     @DxResourceManager.RegisterTheme(Themes.OfficeWhite)
     @DxResourceManager.RegisterScripts()
     <link rel="stylesheet" href="@Assets["app.css"]" />
+    @* Modernist design system (design_handoff_modernist_xaf). Loads LAST on purpose: it overrides
+       both the Classic theme's Bootstrap layer and app.css's chrome, and equal-specificity rules are
+       won by whoever comes last. *@
+    <link rel="stylesheet" href="@Assets["modernist-theme.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet @rendermode="InteractiveAuto" />

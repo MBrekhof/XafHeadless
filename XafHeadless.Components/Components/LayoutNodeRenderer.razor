@@ -12,7 +12,8 @@
 @switch (node.Kind) {
     case "group":
         @if (!string.IsNullOrEmpty(node.Caption)) {
-            <fieldset class="xaf-group border rounded p-2 mb-2">
+            @* No `rounded`: the Modernist system has zero radius everywhere. *@
+            <fieldset class="xaf-group border p-2 mb-2">
                 <legend class="fs-6 fw-bold w-auto mb-1">@node.Caption</legend>
                 @Children(node)
             </fieldset>
@@ -37,7 +38,9 @@
 
     case "item":
         <div class="xaf-item mb-2">
-            <label class="form-label mb-0 text-muted small">@node.Caption</label>
+            @* Label size/color come from the theme's `.xaf-item .form-label` (12px, 70% ink) --
+               `text-muted small` would win over it with its own !important color. *@
+            <label class="form-label">@node.Caption</label>
             @ItemEditor(node)
         </div>
         break;

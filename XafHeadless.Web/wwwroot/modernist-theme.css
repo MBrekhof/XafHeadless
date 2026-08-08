@@ -1,0 +1,395 @@
+/* ============================================================================
+   Modernist theme for XafHeadless (Blazor)
+   Linked in App.razor AFTER the DevExpress theme registration and app.css so its
+   overrides win. Design handoff: "XAF Form Styling POC/design_handoff_modernist_xaf".
+   Flat, architectural, all-Archivo, red-on-light-grey, zero radius, 2px rules,
+   flush-left everything.
+
+   HOW THE DEVEXPRESS HALF WORKS (handoff step 3, verified against the installed
+   26.1.3 theme, not assumed): this app registers the Classic *Office White* theme,
+   which ships DevExpress rules AND Bootstrap. Classic themes expose no public CSS
+   variable API (only Fluent has --dxds-*), so the levers are the theme's own
+   --dxbl-* variables, which it defines ON THE COMPONENT'S OWN SELECTOR -- e.g.
+   `.dxbl-btn{--dxbl-btn-bg:...}` and `.dxbl-btn-standalone.dxbl-btn-primary{...}`.
+   A :root override therefore does nothing; the redefinition has to match or beat
+   that selector's specificity. Hence the doubled classes below (`.dxbl-btn.dxbl-btn`
+   = one notch up, no !important needed). --dxbl-* is documented as internal and may
+   be renamed between DevExpress versions; the supported alternative for a permanent
+   restyle is a custom Classic theme built from the SCSS sources (dxdocs Blazor/404360),
+   or switching to Themes.BootstrapExternal so only the --bs-* remap below matters.
+   ========================================================================= */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap');
+
+:root {
+  /* — Modernist tokens — */
+  --color-bg: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-text: #201e1d;
+  --color-accent: #ec3013;
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+
+  --color-neutral-100: #f8f4f4; --color-neutral-200: #eae7e7; --color-neutral-300: #d7d3d3;
+  --color-neutral-400: #bab6b6; --color-neutral-500: #9b9797; --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d; --color-neutral-800: #444141; --color-neutral-900: #2d2b2b;
+
+  --color-accent-100: #fff2ef; --color-accent-200: #ffe0d9; --color-accent-300: #ffc4b8;
+  --color-accent-400: #ff9783; --color-accent-500: #ff563c; --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800; --color-accent-800: #7c1405; --color-accent-900: #4d170e;
+
+  --font-heading: "Archivo", system-ui, sans-serif;
+  --font-heading-weight: 800;
+  --font-body: "Archivo", system-ui, sans-serif;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px;
+  --radius: 0px; /* Modernist: zero radius everywhere, on purpose */
+
+  /* — Bootstrap variable remap (app.css chrome + the theme's Bootstrap layer read --bs-*) — */
+  --bs-primary: var(--color-accent);
+  --bs-primary-rgb: 236, 48, 19;
+  --bs-body-bg: var(--color-bg);
+  --bs-body-color: var(--color-text);
+  --bs-body-font-family: var(--font-body);
+  --bs-border-color: var(--color-divider);
+  --bs-border-radius: 0; --bs-border-radius-sm: 0; --bs-border-radius-lg: 0;
+  --bs-border-radius-xl: 0; --bs-border-radius-xxl: 0; --bs-border-radius-pill: 0;
+  --bs-tertiary-bg: var(--color-bg);
+  --bs-secondary-bg: var(--color-surface);
+  --bs-secondary-color: var(--color-neutral-600);
+  --bs-link-color: var(--color-accent-700);
+  --bs-link-hover-color: var(--color-accent-800);
+  /* .text-danger / .validation-message resolve through --bs-danger-rgb: accent-700, because
+     accent-500 is too low-contrast at body size (handoff, Login screen). */
+  --bs-danger-rgb: 174, 24, 0;
+  --bs-danger: var(--color-accent-700);
+  --bs-danger-text-emphasis: var(--color-accent-800);
+  --bs-danger-bg-subtle: var(--color-accent-100);
+  --bs-danger-border-subtle: var(--color-accent-300);
+  --bs-success-text-emphasis: var(--color-neutral-800);
+  --bs-success-bg-subtle: var(--color-neutral-100);
+  --bs-success-border-subtle: var(--color-neutral-300);
+  --bs-warning-text-emphasis: var(--color-accent-800);
+  --bs-warning-bg-subtle: var(--color-accent-100);
+  --bs-warning-border-subtle: var(--color-accent-300);
+}
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+}
+a, .btn-link { color: var(--color-accent-700); text-underline-offset: 3px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+[disabled], .disabled, .dxbl-disabled { opacity: .45; }
+
+/* — App chrome (.xaf-* classes from app.css) — */
+.xaf-topbar {
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: none;
+  border-bottom: 2px solid var(--color-divider) !important;
+}
+.xaf-topbar .fw-bold {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 18px;
+  letter-spacing: -0.015em;
+}
+.xaf-sidebar {
+  background: var(--color-bg);
+  border-right: 2px solid var(--color-divider) !important;
+}
+.xaf-navmenu a {
+  border-radius: 0;              /* app.css sets 6px — kill it */
+  color: var(--color-text);
+  font-size: 14px;
+  transition: none;              /* Modernist is flat and immediate */
+}
+.xaf-navmenu a:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.xaf-navmenu a.active {
+  background: transparent;
+  color: var(--color-accent);
+  font-weight: var(--font-heading-weight);
+  box-shadow: inset 3px 0 0 var(--color-accent); /* flush-left rule instead of a filled pill */
+}
+
+/* — Login card — */
+.xaf-login-card {
+  border: 2px solid var(--color-divider);
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--color-bg);
+}
+.xaf-login-card h1, .xaf-login-card .h3 { text-align: left !important; } /* Modernist: never center */
+
+/* — Bootstrap-classed buttons (app-side markup) — */
+.btn {
+  border-radius: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 14px;
+  justify-content: flex-start;   /* labels flush left, even in wide buttons */
+  text-align: left;
+}
+.btn-primary {
+  --bs-btn-bg: var(--color-accent); --bs-btn-border-color: var(--color-accent);
+  --bs-btn-color: var(--color-bg);
+  --bs-btn-hover-bg: var(--color-accent-600); --bs-btn-hover-border-color: var(--color-accent-600);
+  --bs-btn-hover-color: var(--color-bg);
+  --bs-btn-active-bg: var(--color-accent-700); --bs-btn-active-border-color: var(--color-accent-700);
+  --bs-btn-active-color: var(--color-bg); --bs-btn-active-shadow: none;
+  --bs-btn-disabled-bg: var(--color-accent); --bs-btn-disabled-border-color: var(--color-accent);
+  --bs-btn-disabled-color: var(--color-bg);
+  --bs-btn-focus-shadow-rgb: 236, 48, 19;
+}
+.btn:focus, .btn:active:focus, .form-control:focus {
+  box-shadow: none;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* — Bootstrap-classed inputs + labels — */
+.form-control, .form-select {
+  background: var(--color-surface);
+  border-color: var(--color-divider);
+  border-radius: 0;
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  font-size: 14px;
+}
+.form-control:hover, .form-select:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.form-control:focus, .form-select:focus { border-color: var(--color-accent); box-shadow: none; }
+.xaf-item .form-label {
+  font-weight: 400;
+  font-size: 12px;
+  margin-bottom: 2px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+
+/* — Validation (keep semantics, retheme colors) — */
+.valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-neutral-600); }
+.invalid { outline: 1px solid var(--color-accent-700); }
+.validation-message { color: var(--color-accent-700); }
+
+/* — Cards, alerts, groups, images — */
+.card { border-radius: 0; background: var(--color-surface); border: 0; }
+.alert { border-radius: 0; }
+.xaf-group { border-color: var(--color-divider) !important; border-radius: 0 !important; }
+.xaf-group > legend { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
+.xaf-image { border-radius: 0; border: 1px solid var(--color-divider); filter: grayscale(1) contrast(1.08); }
+.badge { border-radius: 0; }
+
+/* — Plain tables (non-DevExpress) — */
+.table { font-size: 14px; --bs-table-bg: transparent; }
+.table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  background: var(--color-bg);
+  border-bottom: 2px solid var(--color-divider);
+}
+.table td { border-bottom: 1px solid var(--color-divider); }
+.table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+
+/* ============================================================================
+   DevExpress Blazor 26.1 (Classic Office White) — see the header note on why
+   these redefine --dxbl-* variables on the theme's own selectors.
+   ========================================================================= */
+
+/* Buttons: DxButton renders .dxbl-btn.dxbl-btn-standalone.dxbl-btn-{style}. */
+.dxbl-btn.dxbl-btn {
+  --dxbl-btn-font-family: var(--font-heading);
+  --dxbl-btn-font-size: 14px;
+  --dxbl-btn-font-weight: var(--font-heading-weight);
+  --dxbl-btn-border-radius: 0; --dxbl-btn-hover-border-radius: 0;
+  --dxbl-btn-active-border-radius: 0; --dxbl-btn-focus-border-radius: 0;
+  --dxbl-btn-disabled-border-radius: 0;
+  --dxbl-btn-hover-box-shadow: none;
+  --dxbl-btn-focus-shadow-color: transparent;
+  /* Keyboard focus: 2px accent at 2px offset (the theme ships 1px/1px), never a blue glow. */
+  --dxbl-btn-focus-outline-color: var(--color-accent);
+  --dxbl-btn-focus-outline-size: 2px;
+  --dxbl-btn-focus-outline-offset: 2px;
+  --dxbl-btn-disabled-opacity: .45;
+  font-weight: var(--font-heading-weight);
+  justify-content: flex-start;   /* label flush left, incl. the full-width login button */
+  transition: none;
+}
+/* Primary command (Login, Save): solid accent, near-white label. */
+.dxbl-btn-standalone.dxbl-btn-primary {
+  --dxbl-btn-bg: var(--color-accent);
+  --dxbl-btn-color: var(--color-bg);
+  --dxbl-btn-border-color: var(--color-accent);
+  --dxbl-btn-hover-bg: var(--color-accent-600);
+  --dxbl-btn-hover-color: var(--color-bg);
+  --dxbl-btn-hover-border-color: var(--color-accent-600);
+  --dxbl-btn-active-bg: var(--color-accent-700);
+  --dxbl-btn-active-color: var(--color-bg);
+  --dxbl-btn-active-border-color: var(--color-accent-700);
+  --dxbl-btn-disabled-bg: var(--color-accent);
+  --dxbl-btn-disabled-color: var(--color-bg);
+  --dxbl-btn-disabled-border-color: var(--color-accent);
+}
+/* Secondary commands (Cancel, Order summary, Run Now): transparent, 1px divider border.
+   Info/success/warning/danger render styles are folded into the same treatment — accent red
+   stays reserved for the primary action. */
+.dxbl-btn-standalone.dxbl-btn-secondary,
+.dxbl-btn-standalone.dxbl-btn-info,
+.dxbl-btn-standalone.dxbl-btn-success,
+.dxbl-btn-standalone.dxbl-btn-warning,
+.dxbl-btn-standalone.dxbl-btn-danger,
+.dxbl-btn-standalone.dxbl-btn-light,
+.dxbl-btn-standalone.dxbl-btn-dark {
+  --dxbl-btn-bg: transparent;
+  --dxbl-btn-color: var(--color-text);
+  --dxbl-btn-border-color: var(--color-divider);
+  --dxbl-btn-hover-bg: color-mix(in srgb, var(--color-text) 7%, transparent);
+  --dxbl-btn-hover-color: var(--color-text);
+  --dxbl-btn-hover-border-color: var(--color-divider);
+  --dxbl-btn-active-bg: color-mix(in srgb, var(--color-text) 14%, transparent);
+  --dxbl-btn-active-color: var(--color-text);
+  --dxbl-btn-active-border-color: var(--color-divider);
+  --dxbl-btn-disabled-bg: transparent;
+  --dxbl-btn-disabled-color: var(--color-text);
+  --dxbl-btn-disabled-border-color: var(--color-divider);
+}
+
+/* Text editors: DxTextBox / DxDateEdit / DxSpinEdit / DxComboBox all render .dxbl-text-edit. */
+.dxbl-text-edit.dxbl-text-edit {
+  --dxbl-text-edit-bg: var(--color-surface);
+  --dxbl-text-edit-color: var(--color-text);
+  --dxbl-text-edit-border-color: var(--color-divider);
+  --dxbl-text-edit-border-radius: 0;
+  --dxbl-text-edit-font-family: var(--font-body);
+  --dxbl-text-edit-font-size: 14px;
+  --dxbl-text-edit-focus-border-color: var(--color-accent);
+  --dxbl-text-edit-focus-shadow-color: transparent;
+  --dxbl-text-edit-readonly-bg: var(--color-neutral-200);
+  --dxbl-text-edit-readonly-root-bg: var(--color-neutral-200);
+  --dxbl-text-edit-disabled-bg: var(--color-neutral-200);
+  --dxbl-text-edit-disabled-root-bg: var(--color-neutral-200);
+  --dxbl-text-edit-disabled-opacity: .45;
+  --dxbl-text-edit-validation-invalid-color: var(--color-accent-700);
+  --dxbl-text-edit-validation-valid-color: var(--color-neutral-600);
+  --dxbl-text-edit-btn-bg: transparent;
+  --dxbl-text-edit-btn-color: var(--color-text);
+  --dxbl-text-edit-btn-hover-bg: color-mix(in srgb, var(--color-text) 7%, transparent);
+  caret-color: var(--color-accent);
+}
+.dxbl-text-edit.dxbl-text-edit:hover:not(.dxbl-focused) {
+  --dxbl-text-edit-border-color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+
+/* Grid: header row is 11px uppercase 60% ink over a 2px rule; body rows get 1px rules,
+   4% ink hover, no zebra, no rounded container. */
+.dxbl-grid.dxbl-grid {
+  --dxbl-grid-font-family: var(--font-body);
+  --dxbl-grid-font-size: 14px;
+  --dxbl-grid-bg: transparent;
+  --dxbl-grid-color: var(--color-text);
+  --dxbl-grid-border-radius: 0;
+  --dxbl-grid-border-color: var(--color-divider);
+  --dxbl-grid-outer-border-color: var(--color-divider);
+  --dxbl-grid-h-line-color: var(--color-divider);
+  --dxbl-grid-v-line-color: transparent;
+  --dxbl-grid-header-bg: var(--color-bg);
+  --dxbl-grid-header-color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  --dxbl-grid-header-font-weight: var(--font-heading-weight);
+  --dxbl-grid-hover-bg: color-mix(in srgb, var(--color-text) 4%, transparent);
+  --dxbl-grid-hover-bg-static: color-mix(in srgb, var(--color-text) 4%, transparent);
+  --dxbl-grid-hover-color: var(--color-text);
+  --dxbl-grid-focus-bg: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  --dxbl-grid-focus-color: var(--color-text);
+  --dxbl-grid-focus-frame-color: var(--color-accent);
+  --dxbl-grid-filter-panel-bg: var(--color-bg);
+  --dxbl-grid-footer-bg: var(--color-bg);
+  --dxbl-grid-footer-color: var(--color-text);
+  --dxbl-grid-group-footer-bg: var(--color-bg);
+  --dxbl-grid-group-footer-color: var(--color-text);
+  border-radius: 0;
+}
+.dxbl-grid .dxbl-grid-header.dxbl-grid-header {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: var(--font-heading-weight);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  border-bottom: 2px solid var(--color-divider);
+}
+/* The theme fills header cells with `color-mix(#000 5%, var(--dxbl-grid-header-bg))` from a
+   5-class selector, so the header band stays grey however the variable is set — the fill has to be
+   overridden on an equally specific selector. Modernist wants headers on plain ground. */
+.dxbl-grid .dxbl-grid-table > thead > .dxbl-grid-header-row > th.dxbl-grid-header.dxbl-grid-header {
+  background-color: var(--color-bg);
+}
+/* Filter-row (in-place) editors: the theme strips their fill and border so they disappear into the
+   row. Handoff says inputs are inputs — surface fill, 1px divider border. Same specificity as the
+   theme's in-place rule (6 classes / 3 elements), won by load order. */
+.dxbl-grid .dxbl-grid-table > thead > tr.dxbl-grid-editor-inplace-container > td > .dxbl-text-edit.dxbl-text-edit.dxbl-text-edit {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+
+/* Pager: page buttons are .dxbl-btn.dxbl-btn-outline-secondary.dxbl-pager-page-btn (NOT
+   -standalone, so the button rules above don't reach them) and take their colors from
+   --dxbl-pager-* -- which is where Office White's orange was still showing through. */
+.dxbl-pager.dxbl-pager {
+  --dxbl-pager-font-family: var(--font-heading);
+  --dxbl-pager-bg: transparent;
+  --dxbl-pager-color: var(--color-text);
+  --dxbl-pager-border-color: var(--color-divider);
+  --dxbl-pager-btn-bg: transparent;
+  --dxbl-pager-btn-color: var(--color-text);
+  --dxbl-pager-btn-border-color: var(--color-divider);
+  --dxbl-pager-btn-hover-bg: color-mix(in srgb, var(--color-text) 7%, transparent);
+  --dxbl-pager-btn-hover-color: var(--color-text);
+  --dxbl-pager-btn-disabled-bg: transparent;
+  --dxbl-pager-btn-disabled-color: var(--color-text);
+  --dxbl-pager-page-btn-bg: transparent;
+  --dxbl-pager-page-btn-color: var(--color-text);
+  --dxbl-pager-page-btn-hover-bg: color-mix(in srgb, var(--color-text) 7%, transparent);
+  --dxbl-pager-page-btn-hover-color: var(--color-text);
+  --dxbl-pager-active-page-btn-bg: var(--color-accent);
+  --dxbl-pager-active-page-btn-color: var(--color-bg);
+  --dxbl-pager-page-edit-bg: var(--color-surface);
+  --dxbl-pager-page-edit-border-color: var(--color-divider);
+  --dxbl-pager-page-edit-color: var(--color-text);
+}
+
+/* Tabs (nested collection tabs on a DetailView): square, flush left, accent for the selected
+   tab as a rule rather than a filled pill. */
+.dxbl-tabs.dxbl-tabs {
+  --dxbl-tabs-font-family: var(--font-heading);
+  --dxbl-tabs-font-size: 14px;
+  --dxbl-tabs-bg: transparent;
+  --dxbl-tabs-color: var(--color-text);
+  --dxbl-tabs-tab-btn-bg: transparent;
+  --dxbl-tabs-tab-btn-color: var(--color-text);
+  --dxbl-tabs-tab-border-color: var(--color-divider);
+  --dxbl-tabs-tab-hover-bg: color-mix(in srgb, var(--color-text) 7%, transparent);
+  --dxbl-tabs-tab-hover-color: var(--color-text);
+  --dxbl-tabs-tab-selected-bg: transparent;
+  --dxbl-tabs-tab-selected-color: var(--color-accent);
+  --dxbl-tabs-tab-focus-outline-color: var(--color-accent);
+  --dxbl-tabs-separator-border-color: var(--color-divider);
+  --dxbl-tabs-content-color: var(--color-text);
+}
+
+/* Every DevExpress surface that still carries a radius from a variable this file doesn't
+   name (dropdowns, popups, the column chooser, the loading panel): square them.
+   Radio buttons are exempt — a square radio reads as a bug, not as Modernist. */
+[class*="dxbl-"]:not(.dxbl-radio, .dxbl-radio *, .dxbl-radio-button, .dxbl-loading-indicator, .dxbl-loading-indicator *) {
+  border-radius: 0;
+}

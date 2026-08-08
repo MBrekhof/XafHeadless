@@ -9,16 +9,18 @@
 @* UI-001: centered login card (was a bare form pinned top-left). *@
 <div class="xaf-login">
     <div class="xaf-login-card">
-        <h1 class="h3 mb-4 text-center">XafHeadless</h1>
+        @* Modernist: headings are flush left, never centered. *@
+        <h1 class="h3 mb-4">XafHeadless</h1>
         <div class="mb-3">
             <DxTextBox @bind-Text="@userName" NullText="User name" CssClass="w-100" />
         </div>
         <div class="mb-3">
             <DxTextBox @bind-Text="@password" Password="true" NullText="Password" CssClass="w-100" />
         </div>
-        <DxButton Text="Login" Click="@OnLoginClick" Enabled="@(!busy)" CssClass="w-100" />
+        <DxButton Text="Login" Click="@OnLoginClick" Enabled="@(!busy)" CssClass="w-100"
+                  RenderStyle="ButtonRenderStyle.Primary" />
         @if (error is not null) {
-            <p class="text-danger mt-3 mb-0 text-center">@error</p>
+            <p class="text-danger mt-3 mb-0">@error</p>
         }
     </div>
 </div>

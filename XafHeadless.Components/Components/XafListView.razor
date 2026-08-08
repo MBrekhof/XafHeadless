@@ -28,9 +28,13 @@
        (dxdocs DevExpress.Blazor.GridCustomDataSource, 26.1: the documented remote/on-demand binding,
        WASM-compatible). ContextMenus=Header is the column-header sub-menu; its grouping commands
        auto-hide per column when AllowGroup is false (verified 26.1 source:
-       GridDataColumnContextMenuItemsFactory gates them on GridRenderHelper.GetAllowGroup). *@
+       GridDataColumnContextMenuItemsFactory gates them on GridRenderHelper.GetAllowGroup).
+       HighlightRowOnHover: defaults to FALSE (dxdocs DxGrid.HighlightRowOnHover, 26.1), so the
+       Modernist row-hover tint cannot be done in CSS alone -- without the flag the grid never marks a
+       hovered row at all. The tint colour comes from --dxbl-grid-hover-bg in modernist-theme.css. *@
     <DxGrid Data="@GridData" KeyFieldName="@keyField"
             PageSize="25" AllowSort="true" ShowFilterRow="true" AllowSelectRowByClick="true"
+            HighlightRowOnHover="true"
             ShowGroupPanel="true" ContextMenus="GridContextMenus.Header"
             SelectionMode="GridSelectionMode.Single"
             ColumnResizeMode="GridColumnResizeMode.NextColumn"

@@ -1,6 +1,6 @@
 # XafHeadless — DONE
 
-#### UI-002: Modernist theme — restyle the client from the design handoff
+#### UI-002: Modernist theme — restyle the client from the design handoff (ID: 1213)
 
 **Done 2026-08-08** (branch `feature/modernist-theme`, merged to master). Implements
 `XAF Form Styling POC/design_handoff_modernist_xaf/README.md`: flat, architectural, all-Archivo,
@@ -34,7 +34,7 @@ needed adapting — `DateFilterE2ETests` matched a header caption exactly, and `
 makes `innerText` return the transformed text; the assertion is about column identity, so it is now
 case-insensitive.
 
-#### BUG-003: Date filter earned a 400 that terminated the circuit — and the grid served 10 rows, not 25
+#### BUG-003: Date filter earned a 400 that terminated the circuit — and the grid served 10 rows, not 25 (ID: 1214)
 
 **Done 2026-08-08.** Two defects behind one failing E2E test (`OrderServerMode_DateFilterRow_...`), both
 live-diagnosed against running hosts, and **neither caused by the restyle** (reproduced with the styling
@@ -59,7 +59,7 @@ markup's 25. Only `Order_ListView` was affected — the one view with persisted 
 `GridBinding.RestorePageSize` refills the markup value when the blob carries none; a persisted user choice
 still wins.
 
-#### DIAG-001: Instrument the runtime so failures name themselves
+#### DIAG-001: Instrument the runtime so failures name themselves (ID: 1215)
 
 **Done 2026-08-08.** Implements `docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md`, with
 **no new dependencies**. Motivated by BUG-003: an OData 400 killed the circuit and left no evidence in
@@ -82,7 +82,7 @@ carrying the server's reason with the app alive; with the grid handler temporari
 reached the `ErrorBoundary` (circuit **not** terminated, navigating away cleared it). **It found BUG-004
 within minutes of existing.**
 
-#### BUG-004: Dotted model member paths were broken four ways at once
+#### BUG-004: Dotted model member paths were broken four ways at once (ID: 1216)
 
 **Done 2026-08-08.** An XAF ListView column can name a dotted **model** path — `Order_ListView` really has
 `Customer.Name` — which the projector classifies as a plain string with `Lookup == null`. The client assumed
@@ -101,7 +101,7 @@ stopped being a silent ceiling. Verified live: the column shows values, sorts, a
 `Product_ListView`'s other dotted member `PrimaryImage.Data` is `DataType=image`, so `VisibleColumns`
 filters it before `BuildExpand` and **no blob is pulled into rows**.
 
-#### BUG-005 / BUG-006 / BUG-007: A rejected sort or grouping must not outlive the click
+#### BUG-005 / BUG-006 / BUG-007: A rejected sort or grouping must not outlive the click (ID: 1217)
 
 **Done 2026-08-08.** Sweeping every projected list view for blank columns, then sorts, then filters, then
 grouping, found the same amplifier behind two different ceilings. In both cases DxGrid's `LayoutAutoSaving`
@@ -133,7 +133,7 @@ and Employee (2); and server-side grouping *succeeds* — 3 buckets whose counts
 true total), expansion pages children with the group criteria baked into `$filter` (wire-verified), and
 two-level grouping yields leaf children. Zero 4xx, zero circuit deaths.
 
-#### DOC-002: Document the JobServer's dev settings (its absence 500s every request)
+#### DOC-002: Document the JobServer's dev settings (its absence 500s every request) (ID: 1212)
 
 **Done 2026-08-08.** Running `XafHeadless.JobServer.Tests` for the first time on a fresh clone exposed a
 README gap, not a code bug: the one-time setup named only `XafHeadless.Api`'s
@@ -224,7 +224,7 @@ Playwright E2E suite + committed evidence (`docs/evidence/`). Executed in ~1 day
 subagent implementation vs the 3-weekend budget. Abort condition never tripped (no model/security
 logic re-implemented — confirmed by per-task reviews). Origin: `C:\Projects\xaf-blazor-critique.md` Part 4.
 
-#### MIG-001: Migrate to 26.1 on the OutlookInspired demo module
+#### MIG-001: Migrate to 26.1 on the OutlookInspired demo module (ID: 1218)
 
 **Completed 2026-07-12.** Migrated the platform seed to DevExpress 26.1.3 / .NET 10, re-grounded on
 DevExpress's own `OutlookInspiredDemo.Module` (multi-tenant headless hosting — multi-tenancy proved
@@ -378,6 +378,17 @@ the existing client never sends collection members. **Minors folded into PH2-006
 method-summary comment; a one-line note on the fixture's member-name-only duplicate guard. (Reference-branch
 CanWrite is structurally covered by the single gate before the branch; untested sub-case noted.)
 
+#### PH2-003: App-level XAFML diffs — decide where they live (ID: 539)
+
+**Closed as a decision 2026-07-12 (owner) — module-level model IS the platform contract.** Module-level model
+is projected; app-level `Model.xafml` customizations are invisible to the headless host, and that is now the
+deliberate contract rather than an open gap. App-level customizations are out of scope: the seed grounds on
+the OutlookInspired *module* (the host loads modules via `RequiredModuleTypes`, never an app project), and
+every projection/render path is proven module-level. Apps wanting customizations honored should put them in a
+module. Loading app-level XAFML remains a possible **Phase-2 feature** (host references the app project's
+`Model.xafml`, merges its diffs before projection) if a real target app ever needs app-layer customization —
+but it is not on the roadmap. No code.
+
 #### PH2-006: Consolidations + stale comments
 
 **Completed 2026-07-12** (commit `7f1f475`, interactive P3). Cleanup pass — comments + proven-equivalent
@@ -529,7 +540,7 @@ asserted by computed color `rgb(0,128,0)` in the E2E + screenshot; the `1=1` `St
 enum-rewrite case), E2E **5/5**. Build clean. Implementer (opus) + reviewer + focused enum-fix subagent; the
 review's one Important finding is the enum-fix, now landed.
 
-#### BUG-001: `byte[]` members projected a broken `Byte_ListView` nested view
+#### BUG-001: `byte[]` members projected a broken `Byte_ListView` nested view (ID: 1219)
 
 **Completed 2026-07-13** (owner hit it running the POC; first noted as a GAP-009 quirk). Some DetailViews showed
 _"Failed to load view metadata: metadata request for 'Byte_ListView' failed"_ in a nested section.
@@ -556,7 +567,7 @@ real collection still nests, and **no `Byte_ListView` anywhere**. Test:
 no `Byte_ListView` nestedList + real collections still nested). `Api.Tests` **59/59**, `Components.Tests`
 **76/76**. Files: `ViewMetadataProjector.cs`, `GridBinding.cs`, `KnownModel.cs`, `DetailViewMetadataTests.cs`.
 
-#### UI-001: Client UI enhancement — DevExpress theme + image rendering + chrome polish
+#### UI-001: Client UI enhancement — DevExpress theme + image rendering + chrome polish (ID: 1220)
 
 **Completed 2026-07-13** (owner: _"the colors and styling is very minimal compared to a default XAF app"_).
 
@@ -586,7 +597,7 @@ live ACME logo image. `Components.Tests` **76/76**, build clean. Files: `App.raz
 `EditorMap.cs`, `app.css`, `Login.razor`. Surfaced **BUG-002** (nested tab over a non-OData-exposed child type
 shows a raw 404 — pre-existing, tracked separately).
 
-#### DOC-001: Overhaul `docs/HOW-TO-IMPLEMENT.md`
+#### DOC-001: Overhaul `docs/HOW-TO-IMPLEMENT.md` (ID: 1221)
 
 **Completed 2026-07-13.** The guide (`6bfa3dd`) predated the platform's full capability set and framed
 **multi-tenancy** as the default — because the reference module (`OutlookInspiredDemo.Module`) is tenant-aware

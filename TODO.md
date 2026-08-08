@@ -16,7 +16,7 @@ _BUG-001 (byte[] `IsList` members projected a broken `Byte_ListView` nested view
 
 _BUG-002 (nested tabs over a non-OData-exposed child type showed a raw 404 — now the projector omits the unreachable tab) fixed 2026-07-13 — see `docs/DONE.md`._
 
-#### GRID-005: Project a lookup display member's data type so an impossible sort is refused up front
+#### GRID-005: Project a lookup display member's data type so an impossible sort is refused up front (ID: 1222)
 
 **Upgrade path recorded by BUG-006 (2026-08-08, `docs/DONE.md`).** Sorting a lookup column whose display
 member is a blob is impossible server-side — `Store` displays `CustomerStore.Emblem` (`Edm.Binary`), and
@@ -33,7 +33,7 @@ predicates, and their tests — the wire contract changes, so it is not a one-li
 *Cheap partial alternative if the projection change is unwanted:* treat a `lookup` whose display member the
 projector already classifies as `image` the same way `VisibleColumns` does, and never offer it for sorting.
 
-#### GRID-006: Date filtering leans on `date()` because the EDM and CLR types disagree
+#### GRID-006: Date filtering leans on `date()` because the EDM and CLR types disagree (ID: 1223)
 
 **Ceiling accepted by BUG-003 (2026-08-08, `docs/DONE.md`), with the cost written down.** The EDM types
 `DateTime` members as `Edm.DateTimeOffset` while the CLR property is `DateTime?`, so **no** range comparison
@@ -62,7 +62,7 @@ _GRID-002 (server-side grouping/paging for large views via OData `$apply` — hy
 
 _GRID-003 (auto filter row for all column types — lifted the GAP-005 scalar-only restriction now that filtering is client-side) done 2026-07-13 — see `docs/DONE.md`._
 
-#### MIG-002: Headless-migration readiness — gap list + service boundaries for an existing XAF Blazor app
+#### MIG-002: Headless-migration readiness — gap list + service boundaries for an existing XAF Blazor app (ID: 558)
 
 **Planning artifact (owner asked 2026-07-13: "if we wanted to migrate an existing production XAF Blazor app to
 this platform, what's left to build, and what should be its own service?").** This is NOT a commitment — the
@@ -108,7 +108,7 @@ important.
 reports, editors, and background/scheduled work** — do that audit first. No code here; this is the
 migration-planning artifact.
 
-#### GAP-010: Link / Unlink actions for nested list views (association write path)
+#### GAP-010: Link / Unlink actions for nested list views (association write path) (ID: 559)
 
 **Status 2026-07-13 — SERVER + projection DONE** (owner: "server + aggregation projection only now"); the
 **client Link/Unlink UI remains**. Done (see `docs/DONE.md`): `LinkController` link/unlink endpoints (secured
@@ -141,21 +141,10 @@ write path for to-many associations is missing.
 Server + client. Only applies to nested types that are OData-exposed ([[BUG-002]]). Verify every DevExpress API
 against dxdocs / installed 26.1 source, not memory.
 
-#### PH2-003: App-level XAFML diffs — decide where they live
+_PH2-003 (app-level XAFML diffs — **decided 2026-07-12**: module-level model IS the platform contract;
+app-level customizations out of scope, no code) closed as a decision — see `docs/DONE.md`._
 
-Module-level model is projected; app-level `Model.xafml` customizations are invisible to the headless
-host. Module-level remains the de facto contract until this is
-explicitly decided one way or the other (load app XAFML in the host, or declare module-level final).
-
-**DECIDED 2026-07-12 (owner) — module-level model IS the platform contract.** App-level `Model.xafml`
-customizations are out of scope for the headless host: the seed grounds on the OutlookInspired *module*
-(the host loads modules via `RequiredModuleTypes`, never an app project), and every projection/render path
-is proven module-level. Apps wanting customizations honored should put them in a module. Loading app-level
-XAFML remains a possible **Phase-2 feature** (host references the app project's `Model.xafml`, merges its
-diffs before projection) if a real target app ever needs app-layer customization — but it is not on the
-roadmap. This item is closed as a decision; no code.
-
-#### PH2-005: Dedicated read-only lookup endpoint
+#### PH2-005: Dedicated read-only lookup endpoint (ID: 541)
 
 Each lookup target currently requires widening `options.BusinessObject<T>()` exposure. Before
 SEC-001, that widening grew the *unguarded write surface* too — now that OData writes are middleware-
@@ -173,8 +162,10 @@ Build it together with a write-capable lookup-dropdown editor (a future client f
 has a real consumer. Not worth building speculatively now; recorded here so it's a conscious deferral, not
 an oversight.
 
-_All buildable P2 items resolved: GAP-005 + GAP-007 + GAP-009 done (see `docs/DONE.md`); GAP-004, GAP-002,
-PH2-003 parked with owner decisions above; PH2-005 deferred (YAGNI). What remains below is P3 hardening._
+_P2 status: **GAP-002 / GAP-004 / GAP-005 / GAP-007 / GAP-009** done (see `docs/DONE.md`); **PH2-003** closed
+as a decision (moved to `docs/DONE.md`); **PH2-005** deferred (YAGNI, owner-reviewed). **Still open above:**
+**GAP-010** — the client Link/Unlink UI, its server half shipped — and **MIG-002**, a planning artifact with
+no code. Below is P3 hardening._
 
 ## P3: Low — hardening/consolidation
 
@@ -199,8 +190,9 @@ _MT-001 (host self-seeds the tenant DB) done 2026-07-12 — see `docs/DONE.md`._
 
 _SEC-002 (delete the leftover POC account from the original POC's dev database) done 2026-07-12 — see `docs/DONE.md`._
 
-Remaining actionable follow-ups are the two consolidation findings above (**DATA-001**, **TEST-001**) plus
-the GAP-008 minors noted in its DONE record; **GAP-002** and **PH2-005** stay deferred (owner-reviewed).
+_Remaining actionable P3 follow-ups: the **GAP-008** minors, and the two additive **PH2-006** bits
+(`$metadata` cross-check, runtime-validation-in-`Required`) — both noted in their DONE records — plus
+**DIAG-002** and **TEST-002** below. **DATA-001**, **TEST-001** and **GAP-002** are done (above)._
 
 _SVR-001 (JobServer — background jobs + report rendering as a separate service; folds in **SVR-002** unique
 index on `JobDefinition.JobTypeName`, **SVR-003** the DevExpress OData host-shared-BO read fix, and **SVR-004**
@@ -213,7 +205,7 @@ _UI-002 (Modernist theme), DIAG-001 (runtime diagnostics), and BUG-003…BUG-007
 found and fixed 2026-08-08) done — see `docs/DONE.md`. Their two recorded upgrade paths are **GRID-005** and
 **GRID-006** in P1 above._
 
-#### DIAG-002: Durable log sink / end-to-end correlation — deliberately deferred
+#### DIAG-002: Durable log sink / end-to-end correlation — deliberately deferred (ID: 1224)
 
 **Decided, not overlooked** (`docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md`, "Out of
 scope"). DIAG-001 deliberately added **no dependencies**: failures name themselves in the console and on
@@ -229,7 +221,7 @@ screen, but nothing survives the process. What was ruled out and why it might co
 
 No action needed while the current instrumentation keeps answering the questions asked of it.
 
-#### TEST-002: Sweep tooling produced two phantom findings — prefer wire evidence
+#### TEST-002: Sweep tooling produced two phantom findings — prefer wire evidence (ID: 1225)
 
 **Method note from the 2026-08-08 sweep, worth keeping before anyone repeats it.** Two rounds of "bugs" came
 from the *sweep scripts*, not the app:

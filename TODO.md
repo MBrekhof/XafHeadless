@@ -79,10 +79,14 @@ before writing code found that **neither is declared in it**: no chart or analys
 the reference module, and what looks like one (`QuoteAnalysis_ListView`, `Quote_DetailView_Pivot`) is an
 ordinary ListView and a cloned DetailView whose chart/pivot behaviour lives in platform-specific WinForms/
 Blazor code against XtraCharts. A metadata-driven projector has nothing to project. Both cards now carry
-the same three options; the recommendation is **DASH-001 instead** — two real DashboardViews exist and are
-composed of ListViews this platform already renders — and to invent a chart metadata contract only on
-explicit request, because doing so unasked would break the model-is-the-contract principle every other
-feature here has honoured.
+the same three options, and a chart metadata contract should be invented only on explicit request, because
+doing so unasked would break the model-is-the-contract principle every other feature here has honoured.
+
+**That entry originally recommended DASH-001 as the alternative. That recommendation was wrong and is
+withdrawn (2026-08-09).** It claimed "two real DashboardViews exist and are composed of ListViews this
+platform already renders" — read off the view *names* without opening them. `Welcome` holds a single
+decorative `<StaticImage>`, and `Opportunities`' two items target `[DomainComponent]` **non-persistent**
+types with no `DbSet`, which OData cannot serve at all. See [[DASH-001]] and [[NPO-001]].
 
 **EDIT-001's audit is done** and found the more valuable gap: the projector reads **only the CLR type** and
 ignores declared editor aliases entirely, of which this module has 19 across 8 aliases. That is a silent
@@ -93,8 +97,15 @@ to the CLR hint rather than to a badge, and HyperLink + ProgressBar editors ship
 the most-declared alias, was deliberately left on its string fallback because rendering stored HTML is an
 XSS vector — [[EDIT-002]].
 
-**Next: DASH-001**, the recommended answer to the chart/pivot finding above and the last model-declared
-view type this platform does not render.
+**Three cards in a row have now dead-ended on the same thing** — CHART-001, PIVOT-001 and DASH-001 all
+describe screens this module builds in platform-specific code or over non-persistent objects, none of which
+crosses the wire. That pattern is itself the finding, and it is now carded as [[NPO-001]]: a whole class of
+XAF screen (computed/aggregate `[DomainComponent]` types) has no representation here at all. MIG-002's gap
+list never mentioned it.
+
+**Next: CRUD-002** — inline nested-collection editing. Deliberately chosen as something demonstrably real:
+`Order.OrderItems` is an aggregated collection of a **persistent, OData-exposed** type, already rendered as
+a nested tab, and CRUD-001 built the create path it needs. Verifiable end to end, unlike the last three.
 
 **Standing decisions that apply to every card here, so they are stated once:**
 - **The server holds the data.** No feature may pull an unbounded row set to the client. Order is 55k rows;
@@ -253,17 +264,53 @@ module simply does not use it. Re-check against the real target app, not this de
 
 #### DASH-001: Project and render DashboardViews (ID: 1229)
 
-**Deliberately skipped by GAP-004 and still open.** Navigation rule 1 is "ListView only", and
-`NavigationMetadataTests` actively *asserts* no DashboardView reaches the client menu. Closing this means
-changing that rule and that test, not just adding a projector branch.
+**Premise checked 2026-08-09 — including a claim I made myself two iterations earlier, which was wrong.**
 
-**Server:** project the dashboard's item layout (each item referencing another view — list, chart, pivot —
-plus position) as a new `ViewMetadata.Type`, then relax the navigation rule. **Client:** a container that
-lays out items and delegates each to its own view type's renderer, reusing `XafListView` unchanged for list
-items.
+While re-scoping [[CHART-001]] I recommended doing DASH-001 instead, on the grounds that "two real
+DashboardViews exist and are composed of ordinary ListViews the platform already renders". That was read
+off the view *names* in the XAFML without checking their contents. Both halves are wrong:
 
-**Sequencing:** the capstone of [[CHART-001]] and [[PIVOT-001]], not a prerequisite — a dashboard whose
-items can only be lists is worth little. The demo's Welcome dashboard is the ready-made live target.
+- **`Welcome` contains one `<StaticImage>`** — a decorative SVG. No view, no data, nothing to bind.
+- **`Opportunities` has two `DashboardViewItem`s**, `Opportunity_ListView` and `QuoteAnalysis_ListView`.
+  Both target types are **`[DomainComponent]` non-persistent classes** with no `DbSet` — populated in memory
+  by XAF handlers, never stored. They are not OData-exposed and cannot be: that is [[NPO-001]].
+
+So this module cannot demonstrate a working dashboard at all: one is decorative, the other is composed
+entirely of data that never crosses the wire.
+
+**What remains true:** a DashboardView *is* model-declared, and projecting one (items referencing other
+views, plus layout) is legitimate work for an app whose dashboards sit over persistent types. The projection
+is not the hard part — `NavigationMetadataTests` asserts no dashboard reaches the menu, so closing this means
+changing a rule and its test, which is ordinary.
+
+**But it cannot be verified end-to-end here**, and shipping a view type that renders two broken tiles against
+the only dashboards available is worse than not shipping it — the same reasoning that parked SCHED-001.
+
+**Blocked behind [[NPO-001]]**, not merely deprioritised.
+
+#### NPO-001: Non-persistent (DomainComponent) types have no wire representation (ID: 1242)
+
+**Found 2026-08-09 while checking DASH-001, and it is why three separate features have dead-ended.**
+
+XAF apps routinely model computed/aggregate screens as **non-persistent** `[DomainComponent]` classes,
+populated in memory by an `ObjectsGetting` handler rather than stored in a table. This module has at least
+two — `Opportunity` and `QuoteAnalysis` — and neither has a `DbSet`.
+
+**This platform cannot serve them.** Data reaches the client over OData, and `options.BusinessObject<T>()`
+exposes EF entities; a type with no table cannot be queried that way. A view over a non-persistent type
+projects metadata fine and then fails to load data — BUG-002's unreachable-child shape, one level up.
+
+**What it blocks:** [[DASH-001]] entirely (the `Opportunities` dashboard is composed only of such views);
+any target app's summary/aggregate screens, which is where non-persistent objects are most used; and it is
+the honest alternative to inventing a chart contract ([[CHART-001]]) — an app wanting a computed screen
+already has an XAF-native way to declare one, and this platform simply cannot carry it.
+
+**Rough shape:** a read endpoint materialising the type through a `NonPersistentObjectSpace` (so the
+module's own `ObjectsGetting` handler populates it), returning projected rows, plus a client binding that
+routes such views there instead of OData. Read the `xaf-blazor-startup` skill first — it covers
+`ObjectsGetting`/`ObjectByKeyGetting` and the error-1021 trap — and verify against installed 26.1 source.
+
+Sizing: medium-to-large, and **read-only by nature** — a computed object has nowhere to save to.
 
 #### FILE-001: File attachment upload and download (ID: 1234)
 

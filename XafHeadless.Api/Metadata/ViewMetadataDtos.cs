@@ -15,7 +15,12 @@ public record ViewMetadata(string Id, string Type, string ObjectType, string Key
 public record AllowSet(bool Edit, bool New, bool Delete);
 public record ColumnMetadata(string Member, string Caption, string DataType, int? SortIndex,
     string? SortOrder, LookupMetadata? Lookup, List<EnumValueMetadata>? Enum);
-public record LookupMetadata(string ObjectType, string KeyMember, string DisplayMember);
+// GRID-005: DisplayDataType is the display member's ClassifyDataType hint -- the client sorts/groups a
+// lookup by its display path (Store/Emblem), so only this tells it whether that path is a primitive
+// OData can order by. Added last (default null) so existing 3-arg constructions keep compiling, and an
+// absent value means "unknown" rather than "unsortable".
+public record LookupMetadata(string ObjectType, string KeyMember, string DisplayMember,
+    string? DisplayDataType = null);
 // GAP-002: Name is the enum member's CLR name (Enum.GetName) — the form XAF criteria literals use
 // (nameof(Member)). Added last (default null) so 2-arg constructions keep compiling. Value stays the
 // integer; Caption stays the descriptor caption.

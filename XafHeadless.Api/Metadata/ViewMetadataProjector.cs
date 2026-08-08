@@ -277,8 +277,13 @@ public class ViewMetadataProjector {
     static LookupMetadata? ProjectLookup(IMemberInfo mi) {
         if (!IsLookupMember(mi)) return null;
         var targetInfo = mi.MemberTypeInfo!;
-        var defaultMember = targetInfo.DefaultMember?.Name ?? targetInfo.KeyMember.Name;
-        return new LookupMetadata(targetInfo.Type.Name, targetInfo.KeyMember.Name, defaultMember);
+        // GRID-005: keep the display member's IMemberInfo, not just its name, so its data type can be
+        // classified the same way any other member is. The client sorts/groups this lookup by that
+        // member's path, so this is the only thing that tells it whether the path is orderable at all
+        // (CustomerStore.Emblem is a byte[] -> "image" -> Edm.Binary -> $orderby is a guaranteed 400).
+        var displayMember = targetInfo.DefaultMember ?? targetInfo.KeyMember;
+        return new LookupMetadata(targetInfo.Type.Name, targetInfo.KeyMember.Name, displayMember.Name,
+            ClassifyDataType(displayMember));
     }
 
     static List<EnumValueMetadata>? ProjectEnum(IMemberInfo mi) {

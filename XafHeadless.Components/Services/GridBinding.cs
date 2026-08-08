@@ -151,8 +151,30 @@ public static class GridBinding {
     // Edm.DateTimeOffset would be a wrong literal, and raw-timestamp buckets are useless without
     // interval grouping, which remote sources don't support) and enums (group headers would show raw
     // values while cells show captions; the origin repo had no enum column in its OData set to probe).
+    // GRID-005: the server-SORT ceiling. A lookup column sorts and groups by its display PATH
+    // (Store/Emblem), so it is the DISPLAY member -- not the column -- that decides whether OData can
+    // order by it. $orderby must land on a PRIMITIVE; a display member that is itself an entity
+    // reference, a blob or a collection is not one, and earns "The $orderby expression must evaluate to
+    // a single value of primitive type" (400). That type now reaches us as Lookup.DisplayDataType, so
+    // the column simply never offers the sort (XafListView binds AllowSort to this in server mode), the
+    // way the filter row already refuses enum/lookup columns.
+    //
+    // The live case is a lookup-of-a-lookup, NOT a blob (BUG-006 recorded this wrongly): CustomerStore
+    // carries [XafDefaultProperty(nameof(Emblem))] and Emblem is a reference to the Emblem ENTITY
+    // (HasOne/WithMany), so Store's display path resolves to a navigation property. Any entity whose
+    // default property is a reference hits this, which makes it a good deal more common than a blob.
+    //
+    // A NULL DisplayDataType means the host predates the field -- unknown, not unsortable -- so sorting
+    // every lookup against an older Api keeps working. BUG-005's StripShaping stays the backstop either
+    // way: AllowSort=false stops the header CLICK, but SortIndex/SortBy still sort in code (dxdocs,
+    // DxGridDataColumn.AllowSort), so a layout persisted before this ceiling existed can still re-apply
+    // a sort we cannot serve.
+    public static bool IsServerSortable(ColumnMetadata c) =>
+        c.Lookup?.DisplayDataType is not ("lookup" or "image" or "collection");
+
     public static bool IsServerGroupable(ColumnMetadata c) =>
-        c.Lookup is not null || (IsServerFilterable(c) && c.DataType is not ("date" or "collection" or "image"));
+        IsServerSortable(c)
+        && (c.Lookup is not null || (IsServerFilterable(c) && c.DataType is not ("date" or "collection" or "image")));
     public static Dictionary<string, string> BuildGroupPathMap(IEnumerable<ColumnMetadata> columns) =>
         VisibleColumns(columns).Where(IsServerGroupable).ToDictionary(FieldFor, OrderPathFor);
 

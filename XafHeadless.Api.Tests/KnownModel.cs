@@ -25,6 +25,12 @@ public static class KnownModel {
     public const string OrderListViewId = "Order_ListView";
     public const string OrderDetailViewId = "Order_DetailView";
     public const string OrderKeyMember = "ID";                 // OData EntityType key (Guid); confirmed live via ViewMetadata.KeyMember
+    // GRID-005/BUG-006: a lookup column whose DISPLAY member is itself a REFERENCE. Store's target
+    // CustomerStore carries [XafDefaultProperty(nameof(Emblem))], and Emblem is a reference to the
+    // Emblem entity (HasOne/WithMany in OutlookInspiredDbContext) -- NOT a byte[], as BUG-006's record
+    // originally claimed. So Store's display path is a navigation property, $orderby=Store/Emblem is a
+    // guaranteed 400, and this is the live case proving the display member's type must reach the client.
+    public const string OrderNonPrimitiveLookupColumn = "Store";
     public const string OrderCollectionMember = "OrderItems";  // aggregated nested collection on Order_DetailView
     public const string OrderCollectionViewId = "Order_OrderItems_ListView"; // live nestedList.ViewId
     public const string OrderCollectionMasterKeyMember = "Order";           // live nestedList.MasterKeyMember (OrderItem.Order)

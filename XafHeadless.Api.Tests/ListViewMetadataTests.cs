@@ -38,6 +38,28 @@ restrictedCols, "restricted role denies read on this member — projector must o
         .GetProperty("Columns").EnumerateArray()
         .Select(x => x.GetProperty("Member").GetString()!).ToList();
 
+    // GRID-005: LookupMetadata projected ObjectType/KeyMember/DisplayMember and NO type for the display
+    // member, so the client could not tell that sorting Order_ListView's Store column means
+    // $orderby=Store/Emblem over a NAVIGATION PROPERTY -- a guaranteed 400 ("The $orderby expression
+    // must evaluate to a single value of primitive type"). BUG-005 could only strip the shaping AFTER
+    // the click. Classifying the display member is what lets the client refuse it up front.
+    [TestMethod]
+    public async Task Lookup_metadata_projects_its_display_member_data_type() {
+        var client = await GetClientAsync("Admin");
+        var meta = await client.GetFromJsonAsync<JsonElement>($"api/model/views/{KnownModel.OrderListViewId}");
+        var lookups = meta.GetProperty("Columns").EnumerateArray()
+            .Where(c => c.TryGetProperty("Lookup", out var l) && l.ValueKind == JsonValueKind.Object).ToList();
+        Assert.IsNotEmpty(lookups, "Order_ListView must project at least one lookup column for this to prove anything");
+
+        var store = lookups.Single(c => c.GetProperty("Member").GetString() == KnownModel.OrderNonPrimitiveLookupColumn);
+        Assert.AreEqual("lookup", store.GetProperty("Lookup").GetProperty("DisplayDataType").GetString(),
+            $"{KnownModel.OrderNonPrimitiveLookupColumn} displays a reference, not a primitive -- the client needs the type to refuse the sort");
+
+        foreach (var c in lookups)
+            Assert.IsFalse(string.IsNullOrEmpty(c.GetProperty("Lookup").GetProperty("DisplayDataType").GetString()),
+                $"every projected lookup must carry its display member's type ({c.GetProperty("Member").GetString()} did not)");
+    }
+
     [TestMethod]
     public async Task Unknown_view_returns_404() {
         var client = await GetClientAsync("Admin");

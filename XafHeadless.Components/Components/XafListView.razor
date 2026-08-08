@@ -51,13 +51,16 @@
                    enum/lookup cells get a disabled placeholder with a tooltip; only IsServerGroupable
                    columns may group -- AllowGroup=false hides both the panel drag and the header-menu
                    grouping commands (GridBinding.BuildCriteriaPathMap/BuildGroupPathMap enforce the same
-                   ceilings on the wire, so UI and wire can't drift apart).
+                   ceilings on the wire, so UI and wire can't drift apart). GRID-005: likewise only
+                   IsServerSortable columns may sort -- a lookup whose display member is a blob orders by
+                   Edm.Binary and is a guaranteed 400, so the header simply doesn't offer it.
                    GRID-004 (companion-headless backport): DATE columns get an explicit DxDateEdit filter cell
                    in BOTH modes (FilterCellFor) -- the metadata declares the type, so the editor never
                    depends on DxGrid's value-type sniffing, which typed string-materialized date cells
                    as text and produced the server-rejected string $filter that killed the circuit. *@
                 <DxGridDataColumn FieldName="@GridBinding.FieldFor(c)" Caption="@c.Caption"
                                   AllowGroup="@(serverData is null ? default(bool?) : GridBinding.IsServerGroupable(c))"
+                                  AllowSort="@(serverData is null ? default(bool?) : GridBinding.IsServerSortable(c))"
                                   FilterRowCellTemplate="@FilterCellFor(c)" />
             }
         </Columns>

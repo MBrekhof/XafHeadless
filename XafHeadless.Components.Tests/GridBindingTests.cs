@@ -10,8 +10,10 @@ namespace XafHeadless.Components.Tests;
 public class GridBindingTests {
     static ColumnMetadata Plain(string member, string dataType = "string", int? sortIndex = null, string? sortOrder = null) =>
         new(member, member, dataType, sortIndex, sortOrder, null, null);
-    static ColumnMetadata Lookup(string member, string objectType, string keyMember, string displayMember) =>
-        new(member, member, "lookup", null, null, new LookupMetadata(objectType, keyMember, displayMember), null);
+    static ColumnMetadata Lookup(string member, string objectType, string keyMember, string displayMember,
+        string? displayDataType = null) =>
+        new(member, member, "lookup", null, null,
+            new LookupMetadata(objectType, keyMember, displayMember, displayDataType), null);
     static ColumnMetadata Enum(string member, params (long Value, string Caption)[] values) =>
         new(member, member, "enum", null, null, null, values.Select(v => new EnumValueMetadata((object)v.Value, v.Caption)).ToList());
 
@@ -194,6 +196,40 @@ public class GridBindingTests {
     }
 
     // ---- Task 4.3 (GRID-001 server-side grouping): groupable ceiling + $apply translation ----
+
+    // ---- GRID-005: refuse an impossible sort up front instead of recovering after the click ----
+
+    // Order_ListView's Store column is a lookup whose display member is CustomerStore.Emblem -- and
+    // Emblem is a reference to the Emblem ENTITY (CustomerStore carries [XafDefaultProperty(Emblem)];
+    // verified in the demo module's source, HasOne/WithMany). Sorting it sends $orderby=Store/Emblem
+    // over a navigation property and earns a guaranteed 400 -- "The $orderby expression must evaluate
+    // to a single value of primitive type." BUG-005 could only strip the shaping AFTER the failure;
+    // with the display member's type on the wire the column never offers the sort at all.
+    [TestMethod]
+    public void IsServerSortable_refuses_a_lookup_whose_display_member_is_not_a_primitive() {
+        Assert.IsFalse(GridBinding.IsServerSortable(Lookup("Store", "CustomerStore", "ID", "Emblem", "lookup")));
+        Assert.IsFalse(GridBinding.IsServerSortable(Lookup("Store", "CustomerStore", "ID", "Logo", "image")));
+        Assert.IsFalse(GridBinding.IsServerSortable(Lookup("Store", "CustomerStore", "ID", "Tags", "collection")));
+        Assert.IsTrue(GridBinding.IsServerSortable(Lookup("Customer", "Customer", "ID", "Name", "string")));
+    }
+
+    // An older Api serves no DisplayDataType. Refusing the sort then would break sorting on every lookup
+    // column against a host that predates this field, so an absent type stays sortable (unchanged
+    // behaviour) and the BUG-005 recovery remains the backstop.
+    [TestMethod]
+    public void IsServerSortable_allows_scalars_and_lookups_of_unknown_display_type() {
+        Assert.IsTrue(GridBinding.IsServerSortable(Plain("Name")));
+        Assert.IsTrue(GridBinding.IsServerSortable(Plain("DateCreated", "date")));
+        Assert.IsTrue(GridBinding.IsServerSortable(Lookup("Customer", "Customer", "ID", "Name")));
+    }
+
+    // groupby((Store/Emblem)) fails for the same reason $orderby=Store/Emblem does, and IsServerGroupable
+    // waved every lookup through on the strength of "a lookup groups by its display path".
+    [TestMethod]
+    public void IsServerGroupable_refuses_a_lookup_it_cannot_sort() {
+        Assert.IsFalse(GridBinding.IsServerGroupable(Lookup("Store", "CustomerStore", "ID", "Emblem", "lookup")));
+        Assert.IsTrue(GridBinding.IsServerGroupable(Lookup("Customer", "Customer", "ID", "Name", "string")));
+    }
 
     [TestMethod]
     public void IsServerGroupable_allows_non_date_scalars_and_lookups_only() {

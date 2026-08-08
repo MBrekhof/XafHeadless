@@ -187,10 +187,14 @@ This is a working seed, not a toy — but it's a *seed*. If you're weighing it f
    OData payload has, so the column renders permanently blank while looking merely empty.
 9. **Persisted grid layout turns any rejected shaping into a permanent outage.** DxGrid's `LayoutAutoSaving`
    saves the sort/grouping that just failed, so the next load replays it and the view renders nothing —
-   recoverable only by clearing the stored prefs. Two ceilings reach it that no client-side check can predict:
-   sorting a lookup whose display member is `Edm.Binary` (*"the `$orderby` expression must evaluate to a single
-   value of primitive type"*), and grouping a high-cardinality column (a deliberate >500-bucket guard). Strip
-   the shaping when a failure is attributable to the layout. Separately, `GridPersistentLayout.PageSize` is
+   recoverable only by clearing the stored prefs. Two ceilings reach it: sorting a lookup whose **display
+   member is not a primitive** (*"the `$orderby` expression must evaluate to a single value of primitive
+   type"* — the live case is a reference, `CustomerStore`'s default property `Emblem` being another entity,
+   which makes this any entity whose default property is a reference), and grouping a high-cardinality column
+   (a deliberate >500-bucket guard). Strip the shaping when a failure is attributable to the layout. The sort
+   half is now refused **up front** — project the display member's data type and the column never offers it —
+   but cardinality stays invisible, so grouping keeps the after-the-fact recovery. Separately,
+   `GridPersistentLayout.PageSize` is
    `int?` with `JsonIgnore(WhenWritingDefault)`, so a null is dropped from the blob and applying that layout
    silently resets the grid to DevExpress's default of **10** rows, overriding your markup.
 

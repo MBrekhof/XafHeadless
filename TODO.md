@@ -16,22 +16,10 @@ _BUG-001 (byte[] `IsList` members projected a broken `Byte_ListView` nested view
 
 _BUG-002 (nested tabs over a non-OData-exposed child type showed a raw 404 — now the projector omits the unreachable tab) fixed 2026-07-13 — see `docs/DONE.md`._
 
-#### GRID-005: Project a lookup display member's data type so an impossible sort is refused up front (ID: 1222)
-
-**Upgrade path recorded by BUG-006 (2026-08-08, `docs/DONE.md`).** Sorting a lookup column whose display
-member is a blob is impossible server-side — `Store` displays `CustomerStore.Emblem` (`Edm.Binary`), and
-`$orderby=Store/Emblem` earns *"The `$orderby` expression must evaluate to a single value of primitive
-type."* The client cannot predict it: `LookupMetadata` projects `ObjectType`/`KeyMember`/`DisplayMember`
-and **no type** for the display member, so `IsServerGroupable`/`AllowSort` have nothing to test.
-
-Today the ceiling is enforced *after* the fact — the failure is shown and the persisted shaping is dropped
-so it can't outlive the click (BUG-006/BUG-007). Better: extend `LookupMetadata` with the display member's
-projected `DataType`, then refuse the sort **up front** (`AllowSort=false` for that column in server mode),
-the way the filter row already refuses enum/lookup columns. Touches the projector, the client's ceiling
-predicates, and their tests — the wire contract changes, so it is not a one-liner.
-
-*Cheap partial alternative if the projection change is unwanted:* treat a `lookup` whose display member the
-projector already classifies as `image` the same way `VisibleColumns` does, and never offer it for sorting.
+_GRID-005 (project a lookup display member's data type so an impossible sort is refused up front —
+`LookupMetadata.DisplayDataType` + `IsServerSortable` + `AllowSort` in server mode) done 2026-08-08 — see
+`docs/DONE.md`. It also **corrected BUG-006's recorded root cause**: Store's display member `Emblem` is a
+**reference to an entity**, not the `Edm.Binary` blob that record claimed._
 
 #### GRID-006: Date filtering leans on `date()` because the EDM and CLR types disagree (ID: 1223)
 

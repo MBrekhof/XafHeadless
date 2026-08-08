@@ -1,5 +1,44 @@
 # XafHeadless — DONE
 
+#### GRID-005: Refuse an impossible lookup sort up front instead of recovering after the click (ID: 1222)
+
+**Done 2026-08-08.** Implements the upgrade path BUG-005 recorded. `LookupMetadata` projected
+`ObjectType`/`KeyMember`/`DisplayMember` and **no type** for the display member, so the client could not
+tell that sorting a lookup column meant `$orderby` over something OData cannot order by; the ceiling was
+enforced only *after* the failure. `ProjectLookup` now classifies the display member through the same
+`ClassifyDataType` every other member goes through and ships it as `LookupMetadata.DisplayDataType`.
+`GridBinding.IsServerSortable` refuses `lookup`/`image`/`collection` display members, `IsServerGroupable`
+inherits the same ceiling (`groupby((Store/Emblem))` fails exactly as `$orderby` does), and `XafListView`
+binds `DxGridDataColumn.AllowSort` to it in server mode — verified `bool?` with column-over-grid
+precedence against dxdocs rather than assumed.
+
+**BUG-006's recorded root cause was wrong, and the wire proved it.** That record said Store's display
+member `Emblem` is `Edm.Binary`. It is not: `CustomerStore` carries `[XafDefaultProperty(nameof(Emblem))]`
+and `Emblem` is a **reference to the `Emblem` entity** (`HasOne(store => store.Emblem).WithMany(...)` in
+`OutlookInspiredDbContext`), so `$orderby=Store/Emblem` orders by a **navigation property**. The projector
+answered `"lookup"`, not `"image"`, which is what surfaced it — the RED test had been written to the old
+claim and failed on it. This widens the fix: a lookup-of-a-lookup is *any* entity whose default property
+is a reference, which is far more common than a blob default property.
+
+**A null `DisplayDataType` stays sortable** — it means the host predates the field, not that the column is
+unsortable — so an older Api keeps working. BUG-005's `StripShaping` remains the backstop regardless:
+`AllowSort=false` stops the header *click*, but `SortIndex`/`SortBy` still sort in code (dxdocs), so a
+layout persisted before this ceiling existed can still re-apply a sort the server cannot serve.
+
+Tests: `Api.Tests` **72/72** (pins that every projected lookup carries its display member's type, and that
+Store's is a reference), `Components.Tests` **102/102** (+3 predicate tests including the unknown-type
+back-compat case). `LookupSortCeilingE2ETests` proves it live and was **watched to fail** with the
+predicate reverted — without the ceiling the click destroys the grid outright (the header locator resolves
+to 0 elements), which is precisely the failure BUG-005 was recovering from. Two traps that E2E hit, both
+written into the test: in Server render mode the OData calls are issued by the Blazor circuit
+**server-side**, so `Page.Request` never sees them and a network assertion passes vacuously; and GAP-008
+persists layout, so a toggle assertion is stateful across runs and would leave `Order_ListView` sorted for
+`DateFilterE2ETests` — it clears the prefs before and in `finally`.
+
+Files: `ViewMetadataProjector.cs`, `ViewMetadataDtos.cs`, `Contracts/ViewMetadata.cs`, `GridBinding.cs`,
+`XafListView.razor`, `ListViewMetadataTests.cs`, `KnownModel.cs`, `GridBindingTests.cs`,
+`LookupSortCeilingE2ETests.cs`.
+
 #### UI-002: Modernist theme — restyle the client from the design handoff (ID: 1213)
 
 **Done 2026-08-08** (branch `feature/modernist-theme`, merged to master). Implements
@@ -104,18 +143,27 @@ filters it before `BuildExpand` and **no blob is pulled into rows**.
 #### BUG-005 / BUG-006 / BUG-007: A rejected sort or grouping must not outlive the click (ID: 1217)
 
 **Done 2026-08-08.** Sweeping every projected list view for blank columns, then sorts, then filters, then
-grouping, found the same amplifier behind two different ceilings. In both cases DxGrid's `LayoutAutoSaving`
-**persisted the shaping that had just failed**, so every later load replayed it and the view rendered
-nothing — recoverable only by clearing the stored prefs by hand, which happened twice mid-sweep.
+grouping, found **one defect exposed by two different ceilings**.
 
-- **BUG-006 — sort:** `Store` is a lookup whose display member `Emblem` is `Edm.Binary`; the server is
-  explicit — *"The `$orderby` expression must evaluate to a single value of primitive type."*
+**BUG-005 — the defect (the amplifier).** DxGrid's `LayoutAutoSaving` **persisted the shaping that had just
+failed**, so every later load replayed it and the view rendered nothing — recoverable only by clearing the
+stored prefs by hand, which happened twice mid-sweep. This is the only thing that was actually fixed; the
+two ceilings below are correct by design and were deliberately left alone.
+
+- **BUG-006 — sort:** `Store` is a lookup whose display member `Emblem` is **a reference to the `Emblem`
+  entity** (`CustomerStore` carries `[XafDefaultProperty(nameof(Emblem))]`; `HasOne(store => store.Emblem)
+  .WithMany(...)`), so the sort orders by a **navigation property**; the server is explicit — *"The
+  `$orderby` expression must evaluate to a single value of primitive type."* **Cause corrected 2026-08-08
+  by GRID-005:** this record originally said `Emblem` was `Edm.Binary` (a blob). It is not — the live
+  projection answered `"lookup"`, and the demo module's source confirms a reference. Same 400, different
+  and considerably more common cause (any entity whose default property is a reference).
 - **BUG-007 — grouping:** grouping by `InvoiceNumber` (55k distinct) trips `EnforceGroupCeiling`'s
   `NotSupportedException`. **That part is correct and deliberate** (GRID-001 chose to fail loud rather than
   render thousands of headers), and cardinality is a runtime property no static ceiling can see.
 
-Neither is predictable client-side — `LookupMetadata` projects no type for a display member — so the ceiling
-is enforced after the fact. `GridBinding.StripShaping` drops `SortIndex`/`SortOrder`/`GroupIndex` while
+Neither was predictable client-side at the time — `LookupMetadata` projected no type for a display member —
+so the ceiling is enforced after the fact. (**GRID-005** has since projected that type, so the *sort* half
+is now refused up front; grouping keeps the after-the-fact recovery, because cardinality stays invisible.) `GridBinding.StripShaping` drops `SortIndex`/`SortOrder`/`GroupIndex` while
 column order, widths and `PageSize` survive, and `OnGridDataError` calls it when the failure is
 **attributable to the layout**: an `ApiRequestException(400)` (a query we built wrongly) or a
 `NotSupportedException` (our own ceilings). A 5xx or a network blip is not the layout's fault and leaves the
@@ -688,7 +736,10 @@ editor. (Collection/image columns are still excluded upstream by `GridBinding.Vi
 filter editor — now filters correctly (`Management` → exactly the 4 managers: CEO/CTO/CMO/COO); on
 `Order_ListView` the **lookup** columns (Customer/Store) and numeric columns now show filter editors too.
 `Components.Tests` **76/76**. One-line change in `XafListView.razor`. (Separate pre-existing quirk, not in
-scope: `Order`'s `Store` lookup DisplayMember is `Emblem`, a `byte[]` image, so that cell has no text to show.)
+scope: `Order`'s `Store` lookup DisplayMember is `Emblem`, which has no text to show. **Corrected 2026-08-08
+by GRID-005:** `Emblem` is a *reference to the `Emblem` entity*, not the `byte[]` this line originally called
+it — the cell is blank because the display path resolves to an object. This line is where that
+misidentification entered the record and was carried into BUG-006.)
 
 #### GAP-010: Link/Unlink endpoints + `Aggregated` projection (server scope)
 

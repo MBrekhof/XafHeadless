@@ -14,7 +14,10 @@ public record ViewMetadata(string Id, string Type, string ObjectType, string Key
 public record AllowSet(bool Edit, bool New, bool Delete);
 public record ColumnMetadata(string Member, string Caption, string DataType, int? SortIndex,
     string? SortOrder, LookupMetadata? Lookup, List<EnumValueMetadata>? Enum);
-public record LookupMetadata(string ObjectType, string KeyMember, string DisplayMember);
+// GRID-005: mirror of the API DTO -- the display member's ClassifyDataType hint. Null means the host
+// predates the field (unknown), which stays sortable; see GridBinding.IsServerSortable.
+public record LookupMetadata(string ObjectType, string KeyMember, string DisplayMember,
+    string? DisplayDataType = null);
 // GAP-002: Name is the enum member's CLR name (the form criteria literals use); mirror of the API DTO.
 public record EnumValueMetadata(object Value, string Caption, string? Name = null);
 // GAP-002: mirror of XafHeadless.Api/Metadata/ViewMetadataDtos.cs's AppearanceRuleDto.

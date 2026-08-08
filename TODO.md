@@ -74,7 +74,22 @@ described an editor that was already write-capable, and BUG-006 (via GRID-003) h
 reference as a blob. Both were written from reading the *records* rather than the *code*. The cards below
 were written the same way — treat their claims as leads to verify first, not as findings.
 
-**Next: CHART-001**, whose `$apply` aggregation path is already wire-proven.
+**CHART-001 and PIVOT-001 are now decided-against rather than pending (2026-08-09).** Checking the model
+before writing code found that **neither is declared in it**: no chart or analysis node exists anywhere in
+the reference module, and what looks like one (`QuoteAnalysis_ListView`, `Quote_DetailView_Pivot`) is an
+ordinary ListView and a cloned DetailView whose chart/pivot behaviour lives in platform-specific WinForms/
+Blazor code against XtraCharts. A metadata-driven projector has nothing to project. Both cards now carry
+the same three options; the recommendation is **DASH-001 instead** — two real DashboardViews exist and are
+composed of ListViews this platform already renders — and to invent a chart metadata contract only on
+explicit request, because doing so unasked would break the model-is-the-contract principle every other
+feature here has honoured.
+
+**EDIT-001's audit is done** and found the more valuable gap: the projector reads **only the CLR type** and
+ignores declared editor aliases entirely, of which this module has 19 across 8 aliases. That is a silent
+wrong-editor bug, not just a missing-editor one.
+
+**Next: EDIT-001 step 1** (project the declared alias), then DASH-001. That order puts a correctness fix
+before a new view type.
 
 **Standing decisions that apply to every card here, so they are stated once:**
 - **The server holds the data.** No feature may pull an unbounded row set to the client. Order is 55k rows;
@@ -116,17 +131,29 @@ is exactly the bug LOOKUP-001 fixed, so re-prove the current-value display rathe
 
 #### CHART-001: Project and render XAF chart views (ID: 1228)
 
-**Gap, verified 2026-08-08:** no chart support — the projector emits only ListView/DetailView and nothing
-references a chart view or `DxChart`.
+**Premise checked against the model 2026-08-09, and it does not hold. Re-scoped before any code.**
 
-**Server:** project the chart view model (series, argument/value data members, series type, diagram type,
-view criteria) as a new `ViewMetadata.Type`. Read the model interfaces from installed 26.1 source before
-designing the DTO. **Client:** render with `DxChart`. Charts aggregate, so the [[PIVOT-001]] question
-applies but is easier: OData `$apply=groupby((x),aggregate(...))` already returns grouped data and
-`ODataGridDataSource.GetGroupInfoAsync` proved it live (buckets summed exactly to the filtered total). Feed
-series straight from `$apply`; a 55k-row chart must never download 55k rows.
+The card assumed XAF exposes a chart *view* whose model carries series, argument/value members, series type
+and diagram type. **There is no such thing in this reference module:** no chart view node of any kind in
+`Model.DesignedDiffs.xafml` (only ListView, DetailView, DashboardView); `QuoteAnalysis_ListView` sounds like
+the exception and is a plain `<ListView>` with two `<ColumnInfo>` entries. The module registers
+`ChartModule`/`PivotGridModule`, and `Quote.cs` imports `DevExpress.XtraCharts` with a
+`[CloneView(CloneViewType.DetailView, "Quote_DetailView_Pivot")]` and a `[NotMapped] PaletteEntry[]` — all
+of it **platform-specific UI code**, none of it declared in the application model.
 
-Natural early target because the aggregation path already exists and is wire-proven. Sizing: medium.
+So a metadata-driven projector has nothing to project. This is the first concrete instance of MIG-002's
+"complex ViewController behaviors … need bespoke client UI or don't cross the wire".
+
+**Three options, and the choice is the owner's:**
+1. **Declare our own chart contract** — small metadata (series member, argument member, aggregate, criteria)
+   an app opts into, rendered with `DxChart` over the wire-proven `$apply` path. Useful, but it is a
+   platform feature we invent, NOT an XAF model projection — a departure from "the module's model is the
+   contract" that every other feature here has honoured.
+2. **Do [[DASH-001]] instead.** Cheaper, faithful to the model, and it has real demand: two DashboardViews
+   (`Welcome`, `Opportunities`) exist, composed of ordinary ListViews the platform already renders.
+3. **Drop it** until a target app has a model-declared chart.
+
+Recommendation: **option 2 now, option 1 only on explicit request.**
 
 #### RPT-001: Client-side reporting — list, parameterize, preview and download reports (ID: 1230)
 
@@ -148,20 +175,32 @@ value: makes shipped-but-unreachable capability usable. Sizing: medium.
 
 #### EDIT-001: Editor inventory + the missing scalar editors (ID: 1233)
 
-**MIG-002 calls for an editor inventory and it has never been done.** Verified 2026-08-08, the shipped set
-is exactly seven: Bool, Date, Enum, Image, Lookup, Number, String. Anything else degrades to the
-unsupported-editor badge — graceful, but it means "feature complete" is currently unmeasurable.
+**The audit MIG-002 asked for is DONE (2026-08-09) — and it found something bigger than a missing editor.**
 
-**Step 1 — the audit** (cheap, and it sizes everything else): enumerate the `PropertyEditor` types the
-reference module's views request and the `EditorAlias` values XAF can emit, and write the list down.
-`ClassifyDataType` is the funnel every member passes through, so the audit is "what hints could it emit,
-and which have no editor". **Step 2 — build what the audit justifies**, likely multiline memo, rich
-text/HTML, and formatted/masked variants; each needs its DevExpress counterpart checked in dxdocs first
-(`DxRichEdit`/`DxHtmlEditor` availability and licensing in the referenced packages is an open question, not
-an assumption).
+**Finding 1: the projector ignores declared editor aliases entirely.** `ViewMetadataProjector` sets a layout
+item's `Editor` purely from `ClassifyDataType`, i.e. from the member's **CLR type**. It never reads the
+model's declared property-editor type. So a member the app explicitly annotated renders as whatever its CLR
+type suggests — HTML as a plain string box, a hyperlink as text, a progress bar as a number spinner, a PDF
+as a string — and **silently**, because nothing degrades to the unsupported-editor badge: as far as the
+projector is concerned nothing unusual was asked for.
 
-Deliberately a chore: the outcome is a written list plus however many small editors it justifies. Do the
-audit even if the editors are deferred — an unmeasured gap cannot be closed.
+**Finding 2: the reference module declares 19 of them, across 8 aliases:** `DxHtmlPropertyEditor` (7),
+`PdfViewerPropertyEditor` (4), `MapHomeOfficePropertyEditor` (2, custom), `HyperLinkPropertyEditor` (2),
+`ProgressBarPropertyEditor` (2), `EnumImageOnlyEditor` (1, custom), `CriteriaPropertyEditor` (1). Shipped
+editors remain the seven CLR-type ones: Bool, Date, Enum, Image, Lookup, Number, String.
+
+**The work this sizes, in order:**
+1. **Project the declared alias** — one new field on the layout item. **Verify first which model node
+   carries it:** `IModelPropertyEditor.PropertyEditorType` is the editor *type*, while `[EditorAlias]` is a
+   string resolved through the editor-descriptor registry. Do not guess — check installed 26.1 source.
+   Everything else is gated on this.
+2. **Honour it client-side**, degrading unknown aliases to the existing badge — strictly better than today,
+   where an unknown alias is invisible and renders as the wrong editor.
+3. **Build the cheap ones:** HyperLink and ProgressBar are a few lines each.
+4. **Decide on the rest.** `DxHtmlPropertyEditor` is the most-used and carries a **security question**:
+   rendering stored HTML is an XSS vector, so it needs sanitising or read-only text rendering, never a naive
+   `MarkupString`. PdfViewer/Map/EnumImageOnly are heavier and two are demo-custom — the natural stopping
+   point.
 
 #### CRUD-002: Inline nested-collection editing (ID: 1235)
 
@@ -189,19 +228,19 @@ against dxdocs before deciding. Sizing: medium, cheaper if RPT-001 lands first.
 
 #### PIVOT-001: Project and render XAF PivotGrid (analysis) views (ID: 1227)
 
-**Gap, verified 2026-08-08:** no pivot support — `ViewMetadataProjector` handles exactly two view kinds and
-a grep for `PivotGrid`/`AnalysisView` returns nothing.
+**Same finding as [[CHART-001]], checked 2026-08-09: not model-declared, so there is nothing to project.**
 
-**Server:** project the pivot/analysis view model (field list: area, area index, summary type, data source
-criteria) as a new `ViewMetadata.Type`. The model interface and the shape of a saved pivot layout must be
-read from installed 26.1 source / dxdocs before anything is designed — do not infer.
+No `<Analysis>` node, no analysis-info member on any business object, nothing in the XAFML describing pivot
+fields or areas. What exists is `PivotGridModule` registered in `Module.cs` and `Quote_DetailView_Pivot`, a
+**cloned DetailView** whose pivot-ness comes from platform-specific UI code.
 
-**Client:** render with `DxPivotGrid`. The question that decides this card's whole shape is **where
-aggregation happens**: DevExpress's Blazor pivot binds to a local collection, while this platform's premise
-is that the server holds the data. Evaluate, in order: OData `$apply=groupby(...)/aggregate(...)` driving a
-custom data source (the GRID-002 route); or a capped in-memory bind reusing `GridBinding.UseServerMode`'s
-`RowCap` decision. Probe the wire before committing. Sizing: large — settle the aggregation decision and
-write it down before implementing.
+So the aggregation question this card was blocked on — server `$apply` versus a capped in-memory bind —
+never arises: there is no pivot definition to render. That question was the stated reason this card was
+sized large and sequenced late; it is moot.
+
+Same three options and the same recommendation as CHART-001. Keep it open rather than closing: if a target
+app declares pivots through XAF's Analysis editor over an analysis-info member, that IS projectable — this
+module simply does not use it. Re-check against the real target app, not this demo.
 
 #### DASH-001: Project and render DashboardViews (ID: 1229)
 

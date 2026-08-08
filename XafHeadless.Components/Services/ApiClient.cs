@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using XafHeadless.Components.Contracts;
 
 namespace XafHeadless.Components.Services;
@@ -9,7 +10,14 @@ namespace XafHeadless.Components.Services;
 // Typed API client. Server wire contract (Tasks 3-6, see docs/notes/save-contract.md):
 // PascalCase JSON everywhere, JWT bearer auth, OData reads only (writes MUST go through
 // api/save/{entity}/{key} -- OData PATCH is non-validating on this host).
-public class ApiClient(HttpClient http, AuthState authState) {
+//
+// Runtime diagnostics (docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md): every failure
+// here is recorded. Two kinds:
+//  - The caller cannot degrade past it (grid reads) -> ApiRequestException, naming method, URL, status
+//    and the server's own error body.
+//  - The caller deliberately degrades (a null view, an empty menu, a dropped pref) -> behaviour is
+//    UNCHANGED, but the failure is logged at Warning instead of vanishing.
+public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> logger) {
     public async Task<string?> LoginAsync(string user, string pass) {
         var response = await http.PostAsJsonAsync("api/Authentication/Authenticate",
             new { userName = user, password = pass });
@@ -22,7 +30,11 @@ public class ApiClient(HttpClient http, AuthState authState) {
     public async Task<ViewMetadata?> GetViewAsync(string viewId) {
         ApplyAuthHeader();
         var response = await http.GetAsync($"api/model/views/{viewId}");
-        if (CheckUnauthorized(response) || !response.IsSuccessStatusCode) return null;
+        if (CheckUnauthorized(response)) return null;
+        if (!response.IsSuccessStatusCode) {
+            LogDegraded(response, $"view metadata for '{viewId}' unavailable, caller renders its error state");
+            return null;
+        }
         return await response.Content.ReadFromJsonAsync<ViewMetadata>();
     }
 
@@ -31,7 +43,11 @@ public class ApiClient(HttpClient http, AuthState authState) {
     public async Task<List<NavigationItemDto>> GetNavigationAsync() {
         ApplyAuthHeader();
         var response = await http.GetAsync("api/model/navigation");
-        if (CheckUnauthorized(response) || !response.IsSuccessStatusCode) return new();
+        if (CheckUnauthorized(response)) return new();
+        if (!response.IsSuccessStatusCode) {
+            LogDegraded(response, "navigation menu empty, callers route to /login");
+            return new();
+        }
         return await response.Content.ReadFromJsonAsync<List<NavigationItemDto>>() ?? new();
     }
 
@@ -39,8 +55,9 @@ public class ApiClient(HttpClient http, AuthState authState) {
         ApplyAuthHeader();
         var response = await http.GetAsync($"api/odata/{entity}{ODataQueryBuilder.Build(q)}", ct);
         if (CheckUnauthorized(response)) return new ODataPage([], 0);
-        response.EnsureSuccessStatusCode(); // was: silently swallowed into an empty page -- callers
-                                             // (the grid) now surface this via GridCustomDataSource.ExceptionHandler.
+        // Surfaced to the grid via GridCustomDataSource.ExceptionHandler (ODataGridDataSource), which
+        // renders it instead of letting it terminate the circuit.
+        await EnsureSuccessAsync(response, ct);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var rows = doc.RootElement.GetProperty("value").EnumerateArray()
             .Select(e => e.Clone()).ToArray();
@@ -57,7 +74,7 @@ public class ApiClient(HttpClient http, AuthState authState) {
         ApplyAuthHeader();
         var response = await http.GetAsync($"api/odata/{entity}{ODataQueryBuilder.BuildGroups(apply, orderBy, top)}", ct);
         if (CheckUnauthorized(response)) return [];
-        response.EnsureSuccessStatusCode(); // surfaces via GridCustomDataSource.ExceptionHandler, like GetPageAsync
+        await EnsureSuccessAsync(response, ct); // surfaces via ExceptionHandler, like GetPageAsync
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var root = doc.RootElement;
         var buckets = root.ValueKind == JsonValueKind.Array ? root : root.GetProperty("value");
@@ -94,8 +111,12 @@ public class ApiClient(HttpClient http, AuthState authState) {
     public async Task<string?> GetPrefsAsync(string viewId) {
         ApplyAuthHeader();
         var response = await http.GetAsync($"api/prefs/{viewId}");
-        if (CheckUnauthorized(response) || response.StatusCode == HttpStatusCode.NoContent || !response.IsSuccessStatusCode)
+        if (CheckUnauthorized(response) || response.StatusCode == HttpStatusCode.NoContent) return null;
+        if (!response.IsSuccessStatusCode) {
+            // 204 above is "no saved layout", the normal case -- not a failure, so not logged.
+            LogDegraded(response, $"layout prefs for '{viewId}' not loaded, grid uses its default layout");
             return null;
+        }
         var body = await response.Content.ReadAsStringAsync();
         return string.IsNullOrEmpty(body) ? null : body;
     }
@@ -107,11 +128,29 @@ public class ApiClient(HttpClient http, AuthState authState) {
         ApplyAuthHeader();
         var response = await http.PutAsync($"api/prefs/{viewId}",
             new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
-        CheckUnauthorized(response);
+        if (CheckUnauthorized(response) || response.IsSuccessStatusCode) return;
+        LogDegraded(response, $"layout prefs for '{viewId}' not saved, the user's next visit sees the old layout");
     }
 
     void ApplyAuthHeader() => http.DefaultRequestHeaders.Authorization =
         authState.Token is null ? null : new AuthenticationHeaderValue("Bearer", authState.Token);
+
+    // Replaces EnsureSuccessStatusCode() on the paths whose failure must reach the caller. Reads the
+    // body FIRST -- that is where an OData error states the actual reason.
+    static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct) {
+        if (response.IsSuccessStatusCode) return;
+        var body = await response.Content.ReadAsStringAsync(ct);
+        throw new ApiRequestException(
+            response.RequestMessage?.Method ?? HttpMethod.Get,
+            response.RequestMessage?.RequestUri?.ToString() ?? "(unknown url)",
+            response.StatusCode, response.ReasonPhrase, ApiRequestException.Excerpt(body));
+    }
+
+    // For the paths that swallow a failure by design: keep the behaviour, lose the silence.
+    void LogDegraded(HttpResponseMessage response, string outcome) => logger.LogWarning(
+        "API request failed: {Method} {Url} -> {Status} {Reason}; {Outcome}",
+        response.RequestMessage?.Method, response.RequestMessage?.RequestUri,
+        (int)response.StatusCode, response.ReasonPhrase, outcome);
 
     bool CheckUnauthorized(HttpResponseMessage response) {
         if (response.StatusCode != HttpStatusCode.Unauthorized) return false;

@@ -13,6 +13,8 @@
    Three render states: loading / error (metadata or data load failed) / loaded. *@
 @inject ApiClient Api
 @inject AuthState AuthState
+@inject ILogger<XafListView> Logger
+@using Microsoft.Extensions.Logging
 @using System.Dynamic
 @using System.Text.Json
 @using DevExpress.Data.Filtering
@@ -169,7 +171,13 @@
             serverGroupableFields = GridBinding.BuildGroupPathMap(columns).Keys.ToHashSet();
             serverData = new ODataGridDataSource(Api, meta.ObjectType, filter, expand, defaultOrder,
                 GridBinding.BuildOrderPathMap(columns), GridBinding.BuildCriteriaPathMap(columns),
-                GridBinding.BuildGroupPathMap(columns), columns, keyField, appearanceMembers);
+                GridBinding.BuildGroupPathMap(columns), columns, keyField, appearanceMembers) {
+                // Without this, a failed page/count/group fetch propagates out of a DevExpress callback
+                // with nothing catching it and TERMINATES the Blazor circuit -- the whole app dies over
+                // one bad request (live repro: an OData 400 from the date filter row). ExceptionHandler
+                // is the documented hook (dxdocs GridCustomDataSource.ExceptionHandler, 26.1).
+                ExceptionHandler = OnGridDataError
+            };
             // loadSeq note (Task 1.5 guard): every await THIS method owns is covered above/below.
             // Page fetches from here on are DxGrid-driven inside ODataGridDataSource; a superseding
             // navigation nulls/replaces serverData, and DxGrid re-queries the NEW instance and
@@ -193,6 +201,16 @@
         } catch (Exception ex) {
             if (seq == loadSeq) error = $"Failed to load data: {ex.Message}";
         }
+    }
+
+    // Server-mode data errors land here instead of killing the circuit (see BindServerMode). Handled
+    // must be set or DevExpress rethrows. The message shown is the ApiRequestException's, which names
+    // the failing request and the server's own reason.
+    void OnGridDataError(GridCustomDataSourceExceptionHandlerArgs args) {
+        args.Handled = true;
+        Logger.LogError(args.Exception, "Grid data request failed for view {ViewId}", ViewId);
+        error = $"Failed to load data: {args.Exception.Message}";
+        InvokeAsync(StateHasChanged);
     }
 
     // (Task 4.3: the Task-4.2 OnCustomizeContextMenu handler that stripped ALL grouping commands in

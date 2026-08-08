@@ -2,6 +2,8 @@
 @implements IDisposable
 @inject AuthState AuthState
 @inject NavigationManager Navigation
+@inject DiagnosticsOptions Diagnostics
+@using Microsoft.AspNetCore.Components.Routing
 
 <div class="xaf-topbar d-flex align-items-center gap-3 px-3 py-2 border-bottom">
     <span class="fw-bold">XafHeadless</span>
@@ -23,7 +25,24 @@
         </div>
     }
     <div class="xaf-content p-3 flex-grow-1">
-        @Body
+        @* An unhandled component exception used to terminate the whole circuit -- one bad request took
+           the app down (live repro: an OData 400 from the grid filter row). The boundary contains it to
+           this content area and Recover() puts the app back on the next navigation. Detail on screen is
+           Development-only (DiagnosticsOptions); the log always gets the full exception. *@
+        <ErrorBoundary @ref="errorBoundary">
+            <ChildContent>@Body</ChildContent>
+            <ErrorContent Context="ex">
+                <div class="alert alert-danger" role="alert">
+                    <div class="fw-bold mb-1">Something went wrong.</div>
+                    @if (Diagnostics.DetailedErrors) {
+                        <pre class="mb-2" style="white-space: pre-wrap">@Describe(ex)</pre>
+                    } else {
+                        <div class="mb-2">Reload the page to continue.</div>
+                    }
+                    <button type="button" class="btn btn-primary" @onclick="RecoverNow">Try again</button>
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
     </div>
 </div>
 
@@ -35,7 +54,23 @@
     // the Changed events: an ApiClient 401 calls AuthState.SetToken(null); a restore that finds no
     // stored token calls MarkRestored -- both raise Changed and land here. It lives in the layout so it
     // applies under whichever interactive render mode (Server or WebAssembly) is currently active.
-    protected override void OnInitialized() => AuthState.Changed += OnAuthChanged;
+    ErrorBoundary? errorBoundary;
+
+    protected override void OnInitialized() {
+        AuthState.Changed += OnAuthChanged;
+        // Without an explicit Recover the boundary stays in its error state for the rest of the session:
+        // every subsequent page would render the alert instead of its content.
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    void OnLocationChanged(object? sender, LocationChangedEventArgs e) => errorBoundary?.Recover();
+
+    void RecoverNow() => errorBoundary?.Recover();
+
+    // ApiRequestException.Message already reads "GET <url> -> 400 Bad Request: <server's reason>";
+    // anything else gets its type so the message isn't ambiguous on its own.
+    static string Describe(Exception ex) =>
+        ex is Contracts.ApiRequestException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
 
     // GAP-007: deferred until PersistAuth has attempted the first-interactive restore
     // (RestoreAttempted). Before that, a null token means "not restored yet, not necessarily logged
@@ -49,5 +84,8 @@
         InvokeAsync(StateHasChanged);
     }
 
-    public void Dispose() => AuthState.Changed -= OnAuthChanged;
+    public void Dispose() {
+        AuthState.Changed -= OnAuthChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
 }

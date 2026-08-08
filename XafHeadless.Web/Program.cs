@@ -5,14 +5,16 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents()
+    // DetailedErrors in Development only: without it a circuit error reaches the browser as the generic
+    // "turn on DetailedErrors" placeholder, which is what made the OData 400 opaque during the hunt.
+    .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment())
     .AddInteractiveWebAssemblyComponents();
 
 // The wire rule (server side): the SAME HTTP client stack the WASM side uses. This host talks to
 // the XAF engine ONLY over HTTP (http://localhost:5200) via ApiClient -- it has no reference to
 // DevExpress.ExpressApp or the demo module, and no DI shortcut to engine services. AddDevExpressBlazor
 // is included here (the Blazor UI package is engine-free).
-builder.Services.AddXafHeadlessClient();
+builder.Services.AddXafHeadlessClient(builder.Environment.IsDevelopment());
 
 var app = builder.Build();
 

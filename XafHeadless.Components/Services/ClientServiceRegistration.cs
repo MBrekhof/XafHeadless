@@ -12,8 +12,13 @@ namespace XafHeadless.Components.Services;
 // references DevExpress.ExpressApp or the demo module; the only DevExpress dependency here is the
 // DevExpress.Blazor UI package (AddDevExpressBlazor), which is engine-free.
 public static class ClientServiceRegistration {
-    public static IServiceCollection AddXafHeadlessClient(this IServiceCollection services) {
+    // detailedErrors: pass the host's own IsDevelopment(). It decides whether a failure's detail may
+    // appear ON SCREEN (see DiagnosticsOptions); the logs get it either way. Defaults to false so a host
+    // that forgets to pass it errs toward the generic message.
+    public static IServiceCollection AddXafHeadlessClient(this IServiceCollection services,
+            bool detailedErrors = false) {
         services.AddDevExpressBlazor();
+        services.AddSingleton(new DiagnosticsOptions(detailedErrors));
         // Scoped, not Singleton: under a Blazor Web App the server side is per-circuit and the WASM
         // side is per-runtime, so each render context gets its own HttpClient + AuthState. (The old
         // WASM-standalone client used Singleton; that would leak one user's token across circuits on

@@ -215,6 +215,7 @@ public class Startup {
 
     public void Configure(IApplicationBuilder app, IWebHostEnvironment env) {
         if (env.IsDevelopment()) app.UseDeveloperExceptionPage();
+        UseFailedRequestLogging(app);
         app.UseRouting();
         app.UseCors();
         app.UseMiddleware<ODataReadOnlyMiddleware>(); // SEC-001: block OData writes (after CORS, before XAF endpoints)
@@ -222,4 +223,27 @@ public class Startup {
         app.UseAuthorization();
         app.UseEndpoints(endpoints => { endpoints.MapControllers(); endpoints.MapXafEndpoints(); });
     }
+
+    // Runtime diagnostics (docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md): log every
+    // request this host answers with 4xx/5xx, WITH its query string. An OData 400 is a normal response,
+    // not an exception, so nothing else records it -- a bad $filter left no trace anywhere, which is
+    // what made the GRID date-filter bug so expensive to find. Registered before UseRouting so it also
+    // sees requests rejected before an endpoint is selected.
+    //
+    // Deliberately ~10 lines rather than UseHttpLogging: that middleware logs EVERY request and needs an
+    // IHttpLoggingInterceptor to narrow itself to failures -- more configuration than it replaces.
+    static void UseFailedRequestLogging(IApplicationBuilder app) => app.Use(async (context, next) => {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        await next();
+        var status = context.Response.StatusCode;
+        if (status < 400) return;
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("XafHeadless.Api.FailedRequests");
+        var elapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        // 4xx is the caller's problem, 5xx is ours -- different levels so a log filter can separate them.
+        logger.Log(status >= 500 ? LogLevel.Error : LogLevel.Warning,
+            "{Method} {Path}{Query} -> {Status} in {ElapsedMs:F0}ms (user {User})",
+            context.Request.Method, context.Request.Path, context.Request.QueryString,
+            status, elapsedMs, context.User?.Identity?.Name ?? "anonymous");
+    });
 }

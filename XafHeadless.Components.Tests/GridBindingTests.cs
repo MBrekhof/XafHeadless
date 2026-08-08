@@ -371,6 +371,32 @@ public class GridBindingTests {
     }
 
     [TestMethod]
+    public void Dotted_model_member_takes_the_same_nav_hop_treatment_as_a_lookup() {
+        // An XAF ListView column can name a dotted MODEL path -- Order_ListView really has
+        // "Customer.Name" -- and the projector classifies it as a plain string, Lookup == null. Every
+        // wire form used to pass the dot straight through, which broke the column three ways at once:
+        //   $orderby=Customer.Name -> 400 "The child type 'Customer.Name' in a cast was not an entity
+        //     type. Casts can only be performed on entity types." (live evidence; Customer/Name is 200)
+        //   $expand never covered Customer, so the wire row had no Customer at all
+        //   the cell read row["Customer.Name"], which no OData payload contains -> permanently BLANK
+        var dotted = Plain("Customer.Name");
+
+        // Grid FieldName stays flat: a dot in a FieldName is DxGrid's POCO nested-path syntax, which
+        // this codebase deliberately avoids for ExpandoObject rows (see FieldFor's remarks).
+        Assert.AreEqual("Customer_Name", GridBinding.FieldFor(dotted));
+        Assert.AreEqual("Customer/Name", GridBinding.OrderPathFor(dotted));
+        Assert.AreEqual("Customer($select=Name)", GridBinding.BuildExpand(new[] { dotted }));
+        Assert.AreEqual("Customer/Name", GridBinding.BuildCriteriaPathMap(new[] { dotted })["Customer_Name"]);
+
+        var row = Row("""{"Customer":{"Name":"Sheffield Hardware"}}""");
+        Assert.AreEqual("Sheffield Hardware", GridBinding.MaterializeRow(row, new[] { dotted })["Customer_Name"]);
+        // A missing or null hop renders empty rather than throwing -- same contract as every other
+        // absent member here.
+        Assert.IsNull(GridBinding.MaterializeRow(Row("""{"Other":1}"""), new[] { dotted })["Customer_Name"]);
+        Assert.IsNull(GridBinding.MaterializeRow(Row("""{"Customer":null}"""), new[] { dotted })["Customer_Name"]);
+    }
+
+    [TestMethod]
     public void RestorePageSize_refills_a_PageSize_that_serialization_trimmed_away() {
         // GridPersistentLayout.PageSize is int? carrying [JsonIgnore(WhenWritingDefault)] (verified in
         // dxdocs, 26.1), so a null PageSize is OMITTED from the persisted blob and deserializes back as

@@ -57,8 +57,8 @@ public class ApiClientTests {
         var ex = await Assert.ThrowsExactlyAsync<ApiRequestException>(() => client.GetPageAsync(
             "Order", new ODataQuery(0, 25, null, null, null, null)));
 
-        Assert.IsTrue(ex.Body!.Length <= ApiRequestException.MaxBodyLength,
-            $"body excerpt must be capped at {ApiRequestException.MaxBodyLength}, was {ex.Body.Length}");
+        Assert.IsLessThanOrEqualTo(ApiRequestException.MaxBodyLength, ex.Body!.Length,
+            "the body excerpt must be capped");
         StringAssert.Contains(ex.Message, "500");
     }
 }

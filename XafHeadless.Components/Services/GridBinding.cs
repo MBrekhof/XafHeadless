@@ -20,26 +20,42 @@ public static class GridBinding {
     public static IEnumerable<ColumnMetadata> VisibleColumns(IEnumerable<ColumnMetadata> columns) =>
         columns.Where(c => c.DataType != "collection" && c.DataType != "image");   // BUG-001: byte[] blobs aren't grid cells
 
-    // ExpandoObject/dictionary key the grid column binds to. Lookup columns are flattened to
+    // THE seam for nested members. A column reaches a value across a nav property in one of two ways,
+    // and every wire form below is derived from these segments so the two cannot drift apart:
+    //  - the projector classified it as a lookup: Member + Lookup.DisplayMember
+    //  - the model member is ITSELF a dotted path ("Customer.Name" -- XAF's own convention), which
+    //    arrives UNclassified (Lookup == null, DataType "string"). Passing that dot through broke the
+    //    column three ways: $orderby/$filter earned a 400 ("The child type 'Customer.Name' in a cast
+    //    was not an entity type"), $expand never fetched the nav property, and the cell read
+    //    row["Customer.Name"] -- a key no OData payload has -- so it rendered permanently blank.
+    // A flat column yields a single segment, which keeps every function below byte-identical for it.
+    static string[] PathSegments(ColumnMetadata c) =>
+        c.Lookup is { } lk ? [.. c.Member.Split('.'), lk.DisplayMember] : c.Member.Split('.');
+
+    // ExpandoObject/dictionary key the grid column binds to. Nested columns are flattened to
     // "Member_DisplayMember" (e.g. "Customer_Name") rather than using DX's documented POCO nested
     // dot-path syntax ("Customer.Name") -- that syntax is only demonstrated for reflected POCOs in
     // dxdocs, not verified for ExpandoObject/IDictionary-backed rows, so this avoids relying on
     // unconfirmed nested-dictionary traversal.
-    public static string FieldFor(ColumnMetadata c) =>
-        c.Lookup is { } lk ? $"{c.Member}_{lk.DisplayMember}" : c.Member;
+    public static string FieldFor(ColumnMetadata c) => string.Join('_', PathSegments(c));
 
-    // The real OData path for $orderby / $expand purposes (nested nav property), as opposed to the
-    // flattened grid FieldName above.
-    public static string OrderPathFor(ColumnMetadata c) =>
-        c.Lookup is { } lk ? $"{c.Member}/{lk.DisplayMember}" : c.Member;
+    // The real OData path for $orderby / $filter purposes (nested nav property), as opposed to the
+    // flattened grid FieldName above. OData separates path segments with '/', never '.'.
+    public static string OrderPathFor(ColumnMetadata c) => string.Join('/', PathSegments(c));
 
-    // $expand covering every lookup column, e.g. "Customer($select=Name),Project($select=Name)".
-    // Returns null when there are no lookup columns (OData query then omits $expand entirely).
+    // $expand covering every nested column, e.g. "Customer($select=Name),Project($select=Name)".
+    // Returns null when there are no nested columns (OData query then omits $expand entirely).
     public static string? BuildExpand(IEnumerable<ColumnMetadata> columns) {
-        var parts = VisibleColumns(columns).Where(c => c.Lookup is not null)
-            .Select(c => $"{c.Member}($select={c.Lookup!.DisplayMember})").ToList();
+        var parts = VisibleColumns(columns).Select(PathSegments).Where(s => s.Length > 1)
+            .Select(ExpandClause).ToList();
         return parts.Count == 0 ? null : string.Join(",", parts);
     }
+
+    // "Customer","Name" -> Customer($select=Name); deeper paths nest, so a hop of any depth is
+    // fetched rather than silently missing from the row.
+    static string ExpandClause(string[] segments) => segments.Length == 2
+        ? $"{segments[0]}($select={segments[1]})"
+        : $"{segments[0]}($expand={ExpandClause(segments[1..])})";
 
     // Default $orderby from the view's own model-configured SortIndex/SortOrder columns.
     public static string? BuildDefaultOrder(IEnumerable<ColumnMetadata> columns) {
@@ -247,10 +263,15 @@ public static class GridBinding {
             IEnumerable<string>? appearanceMembers = null) {
         IDictionary<string, object?> result = new ExpandoObject();
         foreach (var c in VisibleColumns(columns)) {
-            result[FieldFor(c)] = c.DataType == "enum" ? EnumCaption(row, c)
-                : c.Lookup is not null ? LookupDisplay(row, c)
-                : c.DataType == "date" ? DateValue(row, c.Member)
-                : RawValue(row, c.Member);
+            // Walk any nav hops first (a lookup or a dotted member -- see PathSegments); the readers
+            // below then work on the owning object exactly as they always did for a flat column.
+            if (!TryWalk(row, PathSegments(c), out var owner, out var member)) {
+                result[FieldFor(c)] = null;
+                continue;
+            }
+            result[FieldFor(c)] = c.DataType == "enum" ? EnumCaption(owner, member, c.Enum)
+                : c.DataType == "date" ? DateValue(owner, member)
+                : RawValue(owner, member);
         }
         // Ensure the grid's key member is present even when it isn't a displayed column -- e.g. Order's
         // Guid "ID" is the key but not a Order_ListView column. DxGrid.KeyFieldName and OnRowSelected
@@ -280,15 +301,25 @@ public static class GridBinding {
             ? dto.DateTime : el.GetString();
     }
 
-    static object? LookupDisplay(JsonElement row, ColumnMetadata c) =>
-        row.TryGetProperty(c.Member, out var nav) && nav.ValueKind == JsonValueKind.Object
-            ? RawValue(nav, c.Lookup!.DisplayMember) : null;
+    // Follows every segment but the last, leaving the object that OWNS the value and the member to read
+    // from it. A single-segment (flat) path returns the row itself unchanged. A missing or non-object
+    // hop returns false, so the cell renders empty instead of throwing -- the same contract absent
+    // members have always had here. (This replaced LookupDisplay: a lookup is just a one-hop walk.)
+    static bool TryWalk(JsonElement row, string[] segments, out JsonElement owner, out string member) {
+        owner = row;
+        member = segments[^1];
+        foreach (var hop in segments[..^1]) {
+            if (!owner.TryGetProperty(hop, out var next) || next.ValueKind != JsonValueKind.Object) return false;
+            owner = next;
+        }
+        return true;
+    }
 
-    static object? EnumCaption(JsonElement row, ColumnMetadata c) {
-        var raw = RawValue(row, c.Member);
-        if (raw is null || c.Enum is null) return raw;
+    static object? EnumCaption(JsonElement owner, string member, IReadOnlyList<EnumValueMetadata>? values) {
+        var raw = RawValue(owner, member);
+        if (raw is null || values is null) return raw;
         var text = EnumValueCanon.Canonicalize(raw);
-        return c.Enum.FirstOrDefault(e => EnumValueCanon.Canonicalize(e.Value) == text)?.Caption ?? raw;
+        return values.FirstOrDefault(e => EnumValueCanon.Canonicalize(e.Value) == text)?.Caption ?? raw;
     }
 
     static object? RawValue(JsonElement row, string member) {

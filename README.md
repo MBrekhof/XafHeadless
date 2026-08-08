@@ -59,6 +59,11 @@ a rewrite.**
    ```json
    { "Authentication": { "Jwt": { "IssuerSigningKey": "<any random string of 32+ characters>" } } }
    ```
+   If you also run the JobServer, give it **`XafHeadless.JobServer/appsettings.Development.json` with the
+   SAME key** — it ships the same empty key, and it *validates* the JWTs the Api mints rather than issuing
+   its own, so a different key rejects every token. With no key at all the JWT middleware throws
+   `IDX10703: … key length is zero` on **every** request, including the anonymous `/health` endpoint, so
+   the host looks booted but answers 500 to everything.
 2. Tenant data: logging in as `Admin@company1.com` resolves to the demo's tenant catalog
    (`OutlookInspiredDemo_company1`). Either run the DevExpress demo's own `Blazor.Server` app once to seed it,
    **or** the host self-seeds it via `.WithTenantDatabaseUpdater()` (already enabled — see
@@ -84,8 +89,12 @@ credentials). The menu, lists, detail views, filtering, and saves are all driven
 dotnet test XafHeadless.Components.Tests   # client unit tests, no host required
 dotnet test XafHeadless.Api.Tests          # API integration tests (needs the API host on :5200)
 dotnet test XafHeadless.E2E                # dual render-mode Playwright E2E (needs both hosts published & running)
-dotnet test XafHeadless.JobServer.Tests    # JobServer integration tests (needs Api + JobServer hosts + smtp4dev)
+dotnet test XafHeadless.JobServer.Tests --no-build   # needs Api + JobServer hosts + smtp4dev
 ```
+
+`--no-build` on the last one is not optional while the JobServer is running: the test project references
+it, so a rebuild tries to overwrite the exe the live host has locked and the run fails before a single
+test executes (`MSB3027: … locked by "XafHeadless.JobServer"`). Build first, then start the hosts.
 
 ![Architecture](docs/architecture.png)
 

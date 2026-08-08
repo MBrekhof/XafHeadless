@@ -16,6 +16,36 @@ _BUG-001 (byte[] `IsList` members projected a broken `Byte_ListView` nested view
 
 _BUG-002 (nested tabs over a non-OData-exposed child type showed a raw 404 — now the projector omits the unreachable tab) fixed 2026-07-13 — see `docs/DONE.md`._
 
+#### GRID-005: Project a lookup display member's data type so an impossible sort is refused up front
+
+**Upgrade path recorded by BUG-006 (2026-08-08, `docs/DONE.md`).** Sorting a lookup column whose display
+member is a blob is impossible server-side — `Store` displays `CustomerStore.Emblem` (`Edm.Binary`), and
+`$orderby=Store/Emblem` earns *"The `$orderby` expression must evaluate to a single value of primitive
+type."* The client cannot predict it: `LookupMetadata` projects `ObjectType`/`KeyMember`/`DisplayMember`
+and **no type** for the display member, so `IsServerGroupable`/`AllowSort` have nothing to test.
+
+Today the ceiling is enforced *after* the fact — the failure is shown and the persisted shaping is dropped
+so it can't outlive the click (BUG-006/BUG-007). Better: extend `LookupMetadata` with the display member's
+projected `DataType`, then refuse the sort **up front** (`AllowSort=false` for that column in server mode),
+the way the filter row already refuses enum/lookup columns. Touches the projector, the client's ceiling
+predicates, and their tests — the wire contract changes, so it is not a one-liner.
+
+*Cheap partial alternative if the projection change is unwanted:* treat a `lookup` whose display member the
+projector already classifies as `image` the same way `VisibleColumns` does, and never offer it for sorting.
+
+#### GRID-006: Date filtering leans on `date()` because the EDM and CLR types disagree
+
+**Ceiling accepted by BUG-003 (2026-08-08, `docs/DONE.md`), with the cost written down.** The EDM types
+`DateTime` members as `Edm.DateTimeOffset` while the CLR property is `DateTime?`, so **no** range comparison
+binds (see README finding 7). The client therefore emits `date(path) op yyyy-MM-dd`, which the server
+accepts and which needs no timezone conversion.
+
+The cost is SARGability: `CAST(OrderDate AS date) = @d` cannot seek an index on `OrderDate`. Sub-second at
+the demo's 55k rows; a millions-row table wants the mismatch fixed at the source instead — either project
+the members as `DateTimeOffset` in the EDM, or configure the OData query binder so a `DateTimeOffset`
+literal compares against a CLR `DateTime`. Both are Api-host changes; measure before choosing, and keep the
+`date()` path as the fallback for hosts that cannot change their EDM.
+
 ## P2: Medium — platform breadth
 
 _GAP-004 (nav menu, minimal scope) done 2026-07-12 — see `docs/DONE.md`._
@@ -178,6 +208,42 @@ the Api publish fix) done 2026-07-21, merged to master — see `docs/DONE.md`._
 
 _Owner follow-up (not code): file the **DevExpress support ticket** for the OData constant-parameterization
 framework defect — draft ready at [`docs/notes/devexpress-ticket-odata-shared-bo.md`](docs/notes/devexpress-ticket-odata-shared-bo.md); bundle the deferred `$select`→`edmModel` bug into it._
+
+_UI-002 (Modernist theme), DIAG-001 (runtime diagnostics), and BUG-003…BUG-007 (five grid/wire defects, all
+found and fixed 2026-08-08) done — see `docs/DONE.md`. Their two recorded upgrade paths are **GRID-005** and
+**GRID-006** in P1 above._
+
+#### DIAG-002: Durable log sink / end-to-end correlation — deliberately deferred
+
+**Decided, not overlooked** (`docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md`, "Out of
+scope"). DIAG-001 deliberately added **no dependencies**: failures name themselves in the console and on
+screen, but nothing survives the process. What was ruled out and why it might come back:
+
+- **Persistent structured sink** (Serilog file/OTLP): today reproducing a failure means having the console
+  open. Worth it the first time a failure is reported after the fact rather than observed.
+- **Correlation IDs Web → Api → JobServer**: the client and server logs currently correlate by timestamp and
+  URL only. Worth it the first time an intermittent multi-host bug needs the three logs stitched.
+- **E2E network capture**: the suite reports assertion failures, not the 4xx behind them. Both grid bugs this
+  cycle were diagnosed from the *hosts'* logs; a test that attached the failing request to its own output
+  would have shortened that. Cheap to add to `PlaywrightFixture` if E2E triage recurs.
+
+No action needed while the current instrumentation keeps answering the questions asked of it.
+
+#### TEST-002: Sweep tooling produced two phantom findings — prefer wire evidence
+
+**Method note from the 2026-08-08 sweep, worth keeping before anyone repeats it.** Two rounds of "bugs" came
+from the *sweep scripts*, not the app:
+
+1. **Stale grid** — the previous view's grid stays mounted while the next loads, so "wait for a row to exist"
+   returns instantly and samples the OLD view's cells. Reported five all-blank columns that did not exist.
+   Fix: wait for the header set to CHANGE before sampling.
+2. **Wrong control** — clicking a group row does not expand it (`.dxbl-grid-expand-button` does), and a
+   context-menu locator matching "Group" also matches "Ungroup". Reported "children never page in", which was
+   false.
+
+Both were caught the same way: the **Api request log** showed no corresponding request, so the interaction —
+not the app — was at fault. Treat sweep output as a lead and confirm it on the wire. Not code to write; a
+convention to keep, which is why it lives here rather than in a test.
 
 ---
 

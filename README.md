@@ -122,6 +122,11 @@ per-view client code**.
 Its central design property: **nothing in the projection or rendering path is view-specific.** Expose a
 business type and its views render — no client change.
 
+| Capability | How |
+|---|---|
+| **Self-describing failures** | A failed API call names itself: `ApiClient` throws with method, full URL **including the query string**, status and the server's own error body (for OData that body holds the reason). Paths that degrade by design still log a warning instead of vanishing. The Api logs every 4xx/5xx it answers with path + query + user. The grid's `ExceptionHandler` and an `ErrorBoundary` keep a failure from terminating the Blazor circuit; on-screen detail is Development-only. Design: [`docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md`](docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md). It found three of the bugs in findings 7–9 within minutes of existing. |
+| **Styling** | The client carries the **Modernist** design system (flat, all-Archivo, red-on-light-grey, zero radius, 2px rules) as one drop-in stylesheet over the DevExpress Classic theme — `XafHeadless.Web/wwwroot/modernist-theme.css`, sourced from the handoff in `XAF Form Styling POC/`. Classic themes expose no public CSS variable API, so the DevExpress half works by redefining the theme's own `--dxbl-*` variables at matching specificity; that surface is documented as internal, and the file says so. |
+
 ### Background jobs & report rendering — `XafHeadless.JobServer` (SVR-001)
 
 A separate **UI-less XAF host** (`:5300`) runs background work off the API request path via **Hangfire** — so
@@ -166,6 +171,26 @@ This is a working seed, not a toy — but it's a *seed*. If you're weighing it f
    read fine. Fix: `EnableConstantParameterization=false` via an MVC `IApplicationModelConvention`. A
    framework-level defect (SVR-003) — draft support ticket in
    [`docs/notes/devexpress-ticket-odata-shared-bo.md`](docs/notes/devexpress-ticket-odata-shared-bo.md).
+7. **A `DateTime` member cannot be range-compared over OData on this host at all.** The EDM types it
+   `Edm.DateTimeOffset` while the CLR property is `DateTime?`, so the query binder finds no operator for the
+   pair: `$filter=OrderDate ge 2026-04-04T00:00:00Z` → **400** *"The binary operator GreaterThanOrEqual is not
+   defined for the types 'Nullable&lt;DateTime&gt;' and 'Nullable&lt;DateTimeOffset&gt;'"*. Dropping the offset
+   does not help — a no-offset literal fails to *parse* as `Edm.DateTimeOffset`. `date(path) op yyyy-MM-dd`
+   works, needs no timezone conversion, and is what the client emits; the cost is that `date()` is not
+   SARGable, so a very large table wants the EDM/CLR mismatch fixed instead ([`TODO.md`](TODO.md) GRID-006).
+8. **A ListView column can name a dotted MODEL path** (`Customer.Name`) that arrives **unclassified** — a plain
+   string column, `Lookup == null`. Nothing downstream may pass that dot through: OData paths need `/`
+   (`$orderby=Customer.Name` → 400 *"child type … was not an entity type"*), the nav property needs `$expand`
+   or the wire never carries it, and the cell must read the nested object — `row["Customer.Name"]` is a key no
+   OData payload has, so the column renders permanently blank while looking merely empty.
+9. **Persisted grid layout turns any rejected shaping into a permanent outage.** DxGrid's `LayoutAutoSaving`
+   saves the sort/grouping that just failed, so the next load replays it and the view renders nothing —
+   recoverable only by clearing the stored prefs. Two ceilings reach it that no client-side check can predict:
+   sorting a lookup whose display member is `Edm.Binary` (*"the `$orderby` expression must evaluate to a single
+   value of primitive type"*), and grouping a high-cardinality column (a deliberate >500-bucket guard). Strip
+   the shaping when a failure is attributable to the layout. Separately, `GridPersistentLayout.PageSize` is
+   `int?` with `JsonIgnore(WhenWritingDefault)`, so a null is dropped from the blob and applying that layout
+   silently resets the grid to DevExpress's default of **10** rows, overriding your markup.
 
 The full gotcha index (with fixes) is in [`docs/HOW-TO-IMPLEMENT.md`](docs/HOW-TO-IMPLEMENT.md).
 

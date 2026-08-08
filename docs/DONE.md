@@ -1,5 +1,150 @@
 # XafHeadless — DONE
 
+#### UI-002: Modernist theme — restyle the client from the design handoff
+
+**Done 2026-08-08** (branch `feature/modernist-theme`, merged to master). Implements
+`XAF Form Styling POC/design_handoff_modernist_xaf/README.md`: flat, architectural, all-Archivo,
+red-on-light-grey, zero corner radius, 2px rules, flush-left everything. **Styling only** — auth flow, grid
+binding and save/validation behaviour untouched. `XafHeadless.Web/wwwroot/modernist-theme.css` is linked
+last in `App.razor` so it wins over both the Classic theme's Bootstrap layer and `app.css`.
+
+**Why the DevExpress half looks the way it does.** Office White is a *Classic* theme, which exposes **no
+public CSS variable API** (only Fluent has `--dxds-*`), and it defines its radii/colours as `--dxbl-*`
+variables **on the component's own selector** — so a `:root` override is inert. The overrides redefine those
+variables at matching specificity (doubled classes), verified against the installed 26.1 theme CSS rather
+than assumed. `--dxbl-*` is documented as internal; the supported alternative for a permanent restyle is a
+custom Classic theme built from the SCSS sources (dxdocs Blazor/404360) or `Themes.BootstrapExternal`.
+
+**Three things the handoff's drop-in selectors could not have known**, found by inspecting rendered DOM
+(the handoff's own step 3): grid **pager** buttons are `.dxbl-btn-outline-secondary.dxbl-pager-page-btn`
+(not `-standalone`) and colour from `--dxbl-pager-*`, which is where the old orange still showed through;
+**header cells** are filled with `color-mix(#000 5%, header-bg)` from a 5-class selector, so the grey band
+survives any variable change; **filter-row editors** are stripped of fill and border by the in-place editor
+rule, which read as an empty row.
+
+`HighlightRowOnHover="true"` was added to `XafListView` because it defaults to **false** (dxdocs
+`DxGrid.HighlightRowOnHover`) — the handoff's row-hover tint is impossible in CSS alone. Also bumped the
+DevExpress package refs **26.1.3 → 26.1.4** in the same branch: the installed demos pull
+`DevExpress.Document.Processor 26.1.4`, which pins `DevExpress.Data 26.1.4`, so 26.1.3 refs no longer
+restore at all (hard NU1107).
+
+Verified with C# Playwright against both hosts: computed styles for every screen in the handoff's screen
+list plus hover/focus/disabled/error states, screenshots reviewed for login, list and detail. One E2E test
+needed adapting — `DateFilterE2ETests` matched a header caption exactly, and `text-transform: uppercase`
+makes `innerText` return the transformed text; the assertion is about column identity, so it is now
+case-insensitive.
+
+#### BUG-003: Date filter earned a 400 that terminated the circuit — and the grid served 10 rows, not 25
+
+**Done 2026-08-08.** Two defects behind one failing E2E test (`OrderServerMode_DateFilterRow_...`), both
+live-diagnosed against running hosts, and **neither caused by the restyle** (reproduced with the styling
+stashed, twice).
+
+**1. `date()` instead of instant literals.** The date filter row sent a `[day, next-day)` range as UTC
+instant literals. These members are `Edm.DateTimeOffset` in the EDM while the CLR property is `DateTime?`,
+so the binder finds no operator for the pair and answers 400: *"The binary operator GreaterThanOrEqual is
+not defined for the types 'Nullable&lt;DateTime&gt;' and 'Nullable&lt;DateTimeOffset&gt;'."*
+`ApiClient.GetPageAsync`'s `EnsureSuccessStatusCode` then threw out of a DevExpress grid callback with
+nothing handling it, **terminating the Blazor circuit**. It fired on filter *apply* — the test only reported
+at the clear step because the circuit was already gone. Probed live for what the host accepts: a no-offset
+literal fails to *parse*, but `date(path) op yyyy-MM-dd` works (200, and the right row count).
+`ODataFilterTranslator` now emits that, which also drops the `ToUniversalTime()` step — itself a
+wrong-answer bug that pushed a late-evening wall time onto a neighbouring date. Ceiling recorded as
+**GRID-006** (`date()` is not SARGable).
+
+**2. `PageSize` silently reset to 10.** `GridPersistentLayout.PageSize` is `int?` carrying
+`[JsonIgnore(WhenWritingDefault)]`, so a null is omitted from the persisted blob and deserializes back as
+null; applying that layout resets `DxGrid.PageSize` to its documented default of **10**, overriding the
+markup's 25. Only `Order_ListView` was affected — the one view with persisted prefs.
+`GridBinding.RestorePageSize` refills the markup value when the blob carries none; a persisted user choice
+still wins.
+
+#### DIAG-001: Instrument the runtime so failures name themselves
+
+**Done 2026-08-08.** Implements `docs/superpowers/specs/2026-08-08-runtime-diagnostics-design.md`, with
+**no new dependencies**. Motivated by BUG-003: an OData 400 killed the circuit and left no evidence in
+either host's log, because `EnsureSuccessStatusCode`'s message carries neither the request nor the cause,
+and an OData 400 is a normal *response* the Api never logged.
+
+- **`ApiRequestException`** carries method, absolute URL (**query string included** — for a bad `$filter`
+  that IS the evidence), status, and a bounded 2 KB excerpt of the response body. The paths that degrade by
+  design (null view metadata, empty menu, dropped prefs) behave exactly as before but now log a warning.
+- **`GridCustomDataSource.ExceptionHandler`** is set at last (the documented hook, dxdocs 26.1) — never
+  setting it is precisely why a failed fetch escaped a DevExpress callback and killed the circuit.
+- **`ErrorBoundary`** in `MainLayout`, recovering on `LocationChanged` so one failure cannot wedge the app;
+  on-screen detail is Development-only via `DiagnosticsOptions` (each host passes its own
+  `IsDevelopment()`), and `CircuitOptions.DetailedErrors` is set in Development.
+- **The Api logs every 4xx/5xx** with method, path, query string, status, elapsed and user — chosen over
+  `UseHttpLogging`, which logs everything and needs an `IHttpLoggingInterceptor` to narrow to failures.
+
+Verified by fault injection, not inspection: a real 400 produced the log line and an on-screen message
+carrying the server's reason with the app alive; with the grid handler temporarily removed the same failure
+reached the `ErrorBoundary` (circuit **not** terminated, navigating away cleared it). **It found BUG-004
+within minutes of existing.**
+
+#### BUG-004: Dotted model member paths were broken four ways at once
+
+**Done 2026-08-08.** An XAF ListView column can name a dotted **model** path — `Order_ListView` really has
+`Customer.Name` — which the projector classifies as a plain string with `Lookup == null`. The client assumed
+every non-lookup column was a flat property, so: `$orderby` and `$filter` passed the dot through (400 *"The
+child type 'Customer.Name' in a cast was not an entity type"*), `$expand` covered only lookup-classified
+columns so the wire carried no `Customer` at all, and the cell read `row["Customer.Name"]` — a key no OData
+payload has — rendering the column **permanently blank**. Probed the accepted forms first
+(`$orderby=Customer/Name` and `$filter=contains(Customer/Name,'a')` are both 200).
+
+Fixed as **one seam, not four patches**: `GridBinding.PathSegments` turns both kinds of nested column into
+segments (a classified lookup contributes `Member` + `DisplayMember`; a dotted member contributes its own),
+and `FieldFor`, `OrderPathFor`, `BuildExpand` and `MaterializeRow` all derive from it, so the two cases
+cannot drift apart again. A flat column yields one segment, leaving its behaviour byte-identical. `TryWalk`
+replaced `LookupDisplay` outright (a lookup *is* a one-hop walk) and `ExpandClause` nests, so hop depth
+stopped being a silent ceiling. Verified live: the column shows values, sorts, and filters. Checked that
+`Product_ListView`'s other dotted member `PrimaryImage.Data` is `DataType=image`, so `VisibleColumns`
+filters it before `BuildExpand` and **no blob is pulled into rows**.
+
+#### BUG-005 / BUG-006 / BUG-007: A rejected sort or grouping must not outlive the click
+
+**Done 2026-08-08.** Sweeping every projected list view for blank columns, then sorts, then filters, then
+grouping, found the same amplifier behind two different ceilings. In both cases DxGrid's `LayoutAutoSaving`
+**persisted the shaping that had just failed**, so every later load replayed it and the view rendered
+nothing — recoverable only by clearing the stored prefs by hand, which happened twice mid-sweep.
+
+- **BUG-006 — sort:** `Store` is a lookup whose display member `Emblem` is `Edm.Binary`; the server is
+  explicit — *"The `$orderby` expression must evaluate to a single value of primitive type."*
+- **BUG-007 — grouping:** grouping by `InvoiceNumber` (55k distinct) trips `EnforceGroupCeiling`'s
+  `NotSupportedException`. **That part is correct and deliberate** (GRID-001 chose to fail loud rather than
+  render thousands of headers), and cardinality is a runtime property no static ceiling can see.
+
+Neither is predictable client-side — `LookupMetadata` projects no type for a display member — so the ceiling
+is enforced after the fact. `GridBinding.StripShaping` drops `SortIndex`/`SortOrder`/`GroupIndex` while
+column order, widths and `PageSize` survive, and `OnGridDataError` calls it when the failure is
+**attributable to the layout**: an `ApiRequestException(400)` (a query we built wrongly) or a
+`NotSupportedException` (our own ceilings). A 5xx or a network blip is not the layout's fault and leaves the
+layout alone. The recovery is best-effort and never masks the error the user is already shown. Upgrade path
+to refusing such a sort up front: **GRID-005**.
+
+Verified live for both, in separate runs so the evidence is unambiguous: the click still fails visibly with
+0 circuit terminations, the prefs come back without the offending shaping (and the host logs the drop), and
+a **full reload of the same view recovers** with rows and no error.
+
+**The rest of the sweep was clean**, and the successful paths were proven too, not just the failures:
+sorting works on every column of all 7 views; Order's filter row filters on all 8 filterable columns (the 3
+disabled ones are the documented enum/lookup ceiling); nested master-detail tabs render on Order (4 tabs)
+and Employee (2); and server-side grouping *succeeds* — 3 buckets whose counts sum to exactly 54,999 (the
+true total), expansion pages children with the group criteria baked into `$filter` (wire-verified), and
+two-level grouping yields leaf children. Zero 4xx, zero circuit deaths.
+
+#### DOC-002: Document the JobServer's dev settings (its absence 500s every request)
+
+**Done 2026-08-08.** Running `XafHeadless.JobServer.Tests` for the first time on a fresh clone exposed a
+README gap, not a code bug: the one-time setup named only `XafHeadless.Api`'s
+`appsettings.Development.json`, but the JobServer ships the same deliberately-empty `IssuerSigningKey`. With
+no key the JWT middleware throws `IDX10703: … key length is zero` on **every** request — including the
+anonymous `/health` endpoint — so the host looks booted and answers 500 to everything. Two non-obvious
+points now stated in the README: the JobServer key must **match** the Api's (it *validates* the JWTs the Api
+mints; the tests authenticate at `:5200` and present the token to `:5300`), and the suite needs `--no-build`
+while its host runs, or the rebuild collides with the locked exe and the run fails before a single test
+executes. With the key in place the suite is **12/12** — the last never-run suite in the repo.
+
 #### SVR-001: JobServer — background jobs + report rendering as a separate service (ID: 1065)
 
 **Done 2026-07-21** (branch `feat/jobserver-svr-001`, dispatches A–K + follow-ups SVR-002/003/004; merged

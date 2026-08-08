@@ -397,31 +397,37 @@ public class GridBindingTests {
     }
 
     [TestMethod]
-    public void StripSorts_clears_sort_state_but_keeps_the_rest_of_the_layout() {
-        // A sort the server cannot honour is a visible, recoverable ceiling -- until LayoutAutoSaving
-        // PERSISTS it, at which point the view fails on every subsequent load (live repro: sorting
-        // Order_ListView by Store, whose lookup display member Emblem is Edm.Binary, earns "The
-        // $orderby expression must evaluate to a single value of primitive type"; the saved layout then
-        // reproduced that 400 on load until the prefs were cleared by hand). Dropping just the sort
-        // recovers the view while keeping the column order/width the user arranged.
+    public void StripShaping_clears_sort_AND_group_state_but_keeps_the_rest_of_the_layout() {
+        // Shaping the server cannot honour is a visible, recoverable ceiling -- until LayoutAutoSaving
+        // PERSISTS it, at which point the view fails on every subsequent load. Both kinds were hit live
+        // on Order_ListView:
+        //   sort  -- by Store, whose lookup display member Emblem is Edm.Binary: "The $orderby
+        //            expression must evaluate to a single value of primitive type" (400)
+        //   group -- by InvoiceNumber, 55k distinct values: EnforceGroupCeiling's NotSupportedException
+        //            ("produced more than 500 groups"), which no static ceiling can predict because
+        //            cardinality is a runtime property
+        // Each saved layout then reproduced its failure on load until the prefs were cleared by hand.
+        // Dropping the shaping recovers the view while keeping the column order/width the user arranged.
         var layout = new GridPersistentLayout {
             PageSize = 25,
             Columns = new GridPersistentLayoutCollection<GridPersistentLayoutColumn>([
-                new GridPersistentLayoutColumn { FieldName = "InvoiceNumber", Width = "120px" },
+                new GridPersistentLayoutColumn { FieldName = "InvoiceNumber", Width = "120px", GroupIndex = 0 },
                 new GridPersistentLayoutColumn { FieldName = "Store_Emblem", SortIndex = 0, SortOrder = GridColumnSortOrder.Ascending },
             ])
         };
 
-        var stripped = GridBinding.StripSorts(layout);
+        var stripped = GridBinding.StripShaping(layout);
 
         Assert.IsTrue(stripped.Columns!.All(c => c.SortIndex is null && c.SortOrder is null),
             "every column's sort state must be gone");
+        Assert.IsTrue(stripped.Columns!.All(c => c.GroupIndex is null),
+            "every column's group state must be gone");
         Assert.AreEqual(25, stripped.PageSize, "PageSize must survive");
         Assert.AreEqual("120px", stripped.Columns!.First(c => c.FieldName == "InvoiceNumber").Width,
             "column widths must survive");
         Assert.AreEqual(2, stripped.Columns!.Count, "no column may be dropped");
         // A column-less layout is legal (WhenWritingDefault trimming) and must not throw.
-        Assert.IsNotNull(GridBinding.StripSorts(new GridPersistentLayout()));
+        Assert.IsNotNull(GridBinding.StripShaping(new GridPersistentLayout()));
     }
 
     [TestMethod]

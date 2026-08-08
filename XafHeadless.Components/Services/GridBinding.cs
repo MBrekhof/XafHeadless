@@ -101,18 +101,21 @@ public static class GridBinding {
                     ? c : c with { GroupIndex = null }))
         };
 
-    // Drops sort state, keeping column order/width and PageSize. A sort the server cannot honour is a
-    // visible, recoverable ceiling -- until LayoutAutoSaving persists it, at which point the view
-    // reproduces the failure on EVERY subsequent load (live repro: Order_ListView sorted by Store, whose
-    // lookup display member Emblem is Edm.Binary -> "The $orderby expression must evaluate to a single
-    // value of primitive type"; the view stayed broken until the prefs were cleared by hand). The client
-    // cannot predict this -- LookupMetadata projects no type for the display member -- so the ceiling is
-    // enforced after the fact instead: the failing sort does not outlive the click. Upgrade path: project
-    // the display member's data type and refuse the sort up front, like the filter-row ceiling does.
-    public static GridPersistentLayout StripSorts(GridPersistentLayout layout) =>
+    // Drops SHAPING (sort + group) state, keeping column order/width and PageSize. Shaping the server
+    // cannot honour is a visible, recoverable ceiling -- until LayoutAutoSaving persists it, at which
+    // point the view reproduces the failure on EVERY subsequent load. Both kinds were hit live on
+    // Order_ListView:
+    //   sort  -- by Store, whose lookup display member Emblem is Edm.Binary: "The $orderby expression
+    //            must evaluate to a single value of primitive type" (400)
+    //   group -- by InvoiceNumber (55k distinct): EnforceGroupCeiling's NotSupportedException
+    // Neither is predictable here: LookupMetadata projects no type for a display member, and cardinality
+    // is a runtime property IsServerGroupable cannot see. So the ceiling is enforced after the fact --
+    // the failing shaping does not outlive the click. Upgrade path: project the display member's data
+    // type and refuse such a sort up front, the way the filter-row ceiling refuses enum/lookup columns.
+    public static GridPersistentLayout StripShaping(GridPersistentLayout layout) =>
         layout.Columns is null ? layout : layout with {
             Columns = new GridPersistentLayoutCollection<GridPersistentLayoutColumn>(
-                layout.Columns.Select(c => c with { SortIndex = null, SortOrder = null }))
+                layout.Columns.Select(c => c with { SortIndex = null, SortOrder = null, GroupIndex = null }))
         };
 
     // GridPersistentLayout.PageSize is `int?` carrying [JsonIgnore(WhenWritingDefault)] (dxdocs, 26.1),

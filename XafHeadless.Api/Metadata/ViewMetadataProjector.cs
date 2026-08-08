@@ -278,12 +278,31 @@ public class ViewMetadataProjector {
         if (!IsLookupMember(mi)) return null;
         var targetInfo = mi.MemberTypeInfo!;
         // GRID-005: keep the display member's IMemberInfo, not just its name, so its data type can be
-        // classified the same way any other member is. The client sorts/groups this lookup by that
-        // member's path, so this is the only thing that tells it whether the path is orderable at all
-        // (CustomerStore.Emblem is a byte[] -> "image" -> Edm.Binary -> $orderby is a guaranteed 400).
-        var displayMember = targetInfo.DefaultMember ?? targetInfo.KeyMember;
-        return new LookupMetadata(targetInfo.Type.Name, targetInfo.KeyMember.Name, displayMember.Name,
-            ClassifyDataType(displayMember));
+        // classified the same way any other member is -- that type is the only thing telling the client
+        // whether the display path is orderable at all.
+        //
+        // BUG-008: and one hop is not enough. XAF's [XafDefaultProperty] frequently points at ANOTHER
+        // reference -- CustomerStore's default property is Emblem, which is an entity, not a scalar --
+        // so stopping here produced a display path that resolved to an object: $expand=Store($select=
+        // Emblem) returned a nav property, the cell had no text, and the column rendered permanently
+        // blank. Walk the default-property chain until it lands on something that is not a reference,
+        // and send the whole dotted path. Verified live: $expand=Store($expand=Emblem($select=CityName))
+        // returns {"Emblem":{"CityName":"Tucson"}} and $orderby=Store/Emblem/CityName is a 200.
+        //
+        // The `visited` set is a cycle guard: two types whose default properties point at each other
+        // would otherwise loop forever. On a cycle the walk stops on a reference, ClassifyDataType says
+        // "lookup", and GRID-005's ceiling refuses to sort it -- the same honest degradation as before.
+        var segments = new List<string>();
+        var display = targetInfo.DefaultMember ?? targetInfo.KeyMember;
+        var visited = new HashSet<Type> { targetInfo.Type };
+        while (IsLookupMember(display) && visited.Add(display.MemberTypeInfo!.Type)) {
+            segments.Add(display.Name);
+            var next = display.MemberTypeInfo!;
+            display = next.DefaultMember ?? next.KeyMember;
+        }
+        segments.Add(display.Name);
+        return new LookupMetadata(targetInfo.Type.Name, targetInfo.KeyMember.Name,
+            string.Join('.', segments), ClassifyDataType(display));
     }
 
     static List<EnumValueMetadata>? ProjectEnum(IMemberInfo mi) {

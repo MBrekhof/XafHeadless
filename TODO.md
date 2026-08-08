@@ -21,49 +21,10 @@ _GRID-005 (project a lookup display member's data type so an impossible sort is 
 `docs/DONE.md`. It also **corrected BUG-006's recorded root cause**: Store's display member `Emblem` is a
 **reference to an entity**, not the `Edm.Binary` blob that record claimed._
 
-#### BUG-008: Order_ListView's Store column renders permanently blank — its display path resolves to an entity (ID: 1226)
-
-**Found 2026-08-08 while implementing GRID-005**, which is built on the same fact but only closed the
-*sorting* half. The column is not empty data — it can never render text.
-
-**What happens.** `Order_ListView`'s `Store` column is a lookup on `CustomerStore`, whose default property
-is `Emblem` (`[XafDefaultProperty(nameof(Emblem))]`). `Emblem` is a **reference to the `Emblem` entity**,
-not a scalar. So `GridBinding.PathSegments` yields `[Store, Emblem]`, `ExpandClause` emits
-`$expand=Store($select=Emblem)` — selecting a *navigation property* — and `MaterializeRow` reads a value
-that is an object, not a display string. The cell shows nothing.
-
-**Evidence, on the wire and on screen** (not inferred):
-- Api log during the GRID-005 work:
-  `GET /api/odata/Order?$count=true&$skip=0&$top=25&$orderby=InvoiceNumber asc&$expand=Customer($select=Name),Store($select=Emblem)`
-  (200 — the host accepts it, it just doesn't carry a renderable value).
-- The live grid row sampled by `LookupSortCeilingE2ETests`:
-  `0000001 | 05/04/2023 | 06/04/2023 | Air | DHL | E-Mart | <blank> | 225 | 55,725 | 15 Days | 0`
-  — every other cell has text; the Store cell is empty.
-- `docs/DONE.md`'s GRID-003 record already noted the blank cell in 2026-07-13 ("that cell has no text to
-  show") but attributed it to `Emblem` being a `byte[]` image. That attribution was wrong and has been
-  corrected; the blankness is real and was never fixed.
-
-**The likely fix — resolve the display member recursively.** `Emblem` itself carries
-`[XafDefaultProperty(nameof(CityName))]`, and `CityName` is a `string`. So the honest display path is
-`Store/Emblem/CityName`. `ProjectLookup` currently takes exactly one hop (`targetInfo.DefaultMember`); it
-would walk while the default member is itself a lookup, bounded against cycles. The client side is already
-ready for depth: `ExpandClause` nests for paths longer than two segments (BUG-004), so
-`$expand=Store($expand=Emblem($select=CityName))` needs no client change — but `LookupMetadata.DisplayMember`
-becomes a *path* rather than a member name, which is a wire-contract change affecting `FieldFor`/
-`OrderPathFor` and their tests. Verify the recursive-default-property pattern against installed 26.1 source
-before implementing; do not hand-roll it from memory.
-
-**It interacts with [[GRID-005]], and the interaction is the point.** Once the display path resolves to a
-primitive, `DisplayDataType` becomes `"string"` and `IsServerSortable` stops refusing the column — sorting
-and grouping come back for free, because they would then order by `Store/Emblem/CityName`, which OData can
-actually do. GRID-005's ceiling is the correct behaviour for a column that cannot be resolved; this makes
-fewer columns fall into it.
-
-**Cheaper alternative if the wire change is unwanted:** treat a lookup whose display member is itself a
-reference the way `VisibleColumns` treats `image` — omit the column rather than render a permanently blank
-one. Honest, but it drops a column the XAF model asked for.
-
-Scope: projector + wire contract + client path handling + tests. Not a one-liner.
+_BUG-008 (Store rendered permanently blank — its display path landed on an entity; `ProjectLookup` now
+walks the default-property chain to a primitive and sends the dotted path `Emblem.CityName`) fixed
+2026-08-09 — see `docs/DONE.md`. It also lifted GRID-005's ceiling for that column, which cost the
+ceiling its only live E2E subject — tracked as [[TEST-003]] below._
 
 #### GRID-006: Date filtering leans on `date()` because the EDM and CLR types disagree (ID: 1223)
 
@@ -103,9 +64,10 @@ LOOKUP-001 inherits.
 reusing proven server capability (create endpoint, `$apply` aggregation, report renderer) and defers those
 needing a design decision first (pivot aggregation, file storage, export ownership).
 
-**Progress:** ~~CRUD-001~~ done 2026-08-09 (`docs/DONE.md`). Next: LOOKUP-001, which should be preceded by
-or bundled with [[BUG-008]] — a picker that cannot render a display string for the very lookups BUG-008
-describes would ship the same blank-value defect into a second place.
+**Progress:** ~~CRUD-001~~ and ~~BUG-008~~ both done 2026-08-09 (`docs/DONE.md`). BUG-008 was taken out of
+order, ahead of LOOKUP-001, because a picker that could not render a display string for the very lookups
+BUG-008 describes would have shipped the same blank-value defect into a second place — and `LookupEditor`
+was in fact one of the two consumers the fix had to touch. **Next: LOOKUP-001**, now unblocked.
 
 **Standing decisions that apply to every card here, so they are stated once:**
 - **The server holds the data.** No feature may pull an unbounded row set to the client. Order is 55k rows;
@@ -443,6 +405,28 @@ screen, but nothing survives the process. What was ruled out and why it might co
   would have shortened that. Cheap to add to `PlaywrightFixture` if E2E triage recurs.
 
 No action needed while the current instrumentation keeps answering the questions asked of it.
+
+#### TEST-003: Restore end-to-end coverage of the AllowSort=false binding (lost to BUG-008) (ID: 1239)
+
+**A real coverage loss, recorded rather than left implied.** GRID-005 refuses to sort a lookup whose display
+path cannot resolve to a primitive, and `LookupSortCeilingE2ETests` proved that live against Store. BUG-008
+then made Store resolve (`Emblem.CityName`) — the correct outcome, but it removed the only live example.
+Checked across all seven navigable views on 2026-08-09: **every** lookup this model projects now resolves to
+a string, so no browser test can drive the ceiling.
+
+Still covered: the predicate, by three unit tests in `GridBindingTests`. **Not** covered: that `XafListView`
+actually binds `DxGridDataColumn.AllowSort` to that predicate — a wiring regression there would now pass
+every test.
+
+**To restore it:** add a dev-only fixture type whose default property cannot resolve — a cycle (two types
+whose default properties reference each other, which the projector's `visited` guard is written for and
+which nothing currently exercises) or a blob default property. Copy the shape of the host-owned
+`LookupProbe`, already a dev-only projection fixture excluded from navigation. Then assert the column offers
+no sort and that clicking its header does not reorder.
+
+Low priority: the unguarded path is also unreachable in this model today, so the risk is a future regression
+rather than a present defect. Do it when someone next touches the sort ceiling, and before any target app
+with an unresolvable lookup relies on it.
 
 #### TEST-002: Sweep tooling produced two phantom findings — prefer wire evidence (ID: 1225)
 

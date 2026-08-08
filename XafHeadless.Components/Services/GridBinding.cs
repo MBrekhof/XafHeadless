@@ -29,8 +29,12 @@ public static class GridBinding {
     //    was not an entity type"), $expand never fetched the nav property, and the cell read
     //    row["Customer.Name"] -- a key no OData payload has -- so it rendered permanently blank.
     // A flat column yields a single segment, which keeps every function below byte-identical for it.
+    // BUG-008: Lookup.DisplayMember is itself a PATH, not a single member name. XAF's
+    // [XafDefaultProperty] often points at another reference (CustomerStore's is Emblem, an entity), so
+    // the projector walks to a primitive and sends e.g. "Emblem.CityName". Splitting it here means the
+    // field name, order path, expand and row materialization all follow the extra hop from one change.
     static string[] PathSegments(ColumnMetadata c) =>
-        c.Lookup is { } lk ? [.. c.Member.Split('.'), lk.DisplayMember] : c.Member.Split('.');
+        c.Lookup is { } lk ? [.. c.Member.Split('.'), .. lk.DisplayMember.Split('.')] : c.Member.Split('.');
 
     // ExpandoObject/dictionary key the grid column binds to. Nested columns are flattened to
     // "Member_DisplayMember" (e.g. "Customer_Name") rather than using DX's documented POCO nested

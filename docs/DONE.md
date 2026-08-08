@@ -1,5 +1,46 @@
 # XafHeadless — DONE
 
+#### BUG-008: A lookup display path that lands on an entity renders blank — resolve it to a primitive (ID: 1226)
+
+**Done 2026-08-09.** `Order_ListView`'s Store column had been blank on every row since the platform could
+render it. `CustomerStore` carries `[XafDefaultProperty(nameof(Emblem))]` and `Emblem` is an **entity**, so
+the projector's single-hop display member produced `$expand=Store($select=Emblem)` — a nav property — and
+the cell had an object where text should be.
+
+**The fix is one hop deeper, on both sides.** `ProjectLookup` now walks the default-property chain until it
+lands on something that is not a reference and sends the whole **dotted path** (`Emblem.CityName`, since
+`Emblem`'s own default property is `CityName`, a string), with `DisplayDataType` describing what the path
+lands on. A `visited` set guards cycles: two types whose default properties point at each other stop the
+walk on a reference, `ClassifyDataType` says `"lookup"`, and GRID-005's ceiling refuses the sort — the same
+honest degradation as before, not a hang.
+
+Client-side this was **one line**, because BUG-004 had already made `PathSegments` the single seam every
+wire form derives from: splitting the dotted display member there gave the field name, the order path, the
+`$expand` and row materialization the extra hop together. The one place that did **not** go through that
+seam was `LookupEditor`, which read the display value as a flat property name and fetched without an
+expand — a dotted path would have silently rendered empty there, so it now walks the path and expands the
+nav property (mirroring `ExpandClause` so the two cannot drift).
+
+**Probed live before implementing, not assumed:** `$expand=Store($expand=Emblem($select=CityName))` returns
+`{"Emblem":{"CityName":"Tucson"}}` (200) and `$orderby=Store/Emblem/CityName` is a 200. Confirmed after, by
+screenshot: the Store column reads Phoenix, San Jose, Albuquerque, Vancouver, Denver… where it was empty.
+
+**It lifts GRID-005's ceiling for free, and that cost a live test.** A resolved path is orderable, so Store
+sorts again. Checking every navigable view showed the wider consequence: **all** lookups this model
+projects now resolve to a string, so there is no longer a live example of an unresolvable display path.
+`LookupSortCeilingE2ETests` asserted the opposite for this exact column and its premise is gone — it has
+been rewritten as `LookupDisplayPathE2ETests` (Store renders text **and** sorts). GRID-005's predicate
+keeps its three unit tests; what is no longer covered end-to-end is the `AllowSort=false` **binding**.
+That is a real coverage loss, not a tidy-up, and it is tracked as **TEST-003** rather than left implied.
+
+Tests: `Components.Tests` **107/107** (+3, RED-first), `Api.Tests` 72/72 (its Store assertion pinned the
+old one-hop behaviour and was updated to the resolved path), E2E **10/11** — the one failure is
+`JobServerE2ETests` needing smtp4dev, unrelated. Build 0 warnings.
+
+Files: `ViewMetadataProjector.cs`, `GridBinding.cs`, `LookupEditor.razor`, `GridBindingTests.cs`,
+`ListViewMetadataTests.cs`, `KnownModel.cs`, `LookupDisplayPathE2ETests.cs` (renamed from
+`LookupSortCeilingE2ETests.cs`).
+
 #### CRUD-001: New-object creation UI — the client half of GAP-003 (ID: 1231)
 
 **Done 2026-08-09.** GAP-003 proved the create endpoint server-side on 2026-07-12, and nothing in the UI

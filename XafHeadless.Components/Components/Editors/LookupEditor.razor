@@ -32,9 +32,14 @@
     protected override async Task OnInitializedAsync() {
         if (Node.Lookup is not { } lk) { loadError = "no lookup metadata"; return; }
         try {
-            var page = await Api.GetPageAsync(lk.ObjectType, new ODataQuery(0, 50, null, null, null, null));
+            // BUG-008: DisplayMember is a PATH, not necessarily a single member -- XAF's default property
+            // often points at another reference, so it can be e.g. "Emblem.CityName". A deeper path needs
+            // its nav property expanded or the payload simply won't carry it.
+            var hops = lk.DisplayMember.Split('.');
+            var expand = hops.Length > 1 ? ExpandFor(hops) : null;
+            var page = await Api.GetPageAsync(lk.ObjectType, new ODataQuery(0, 50, null, null, null, expand));
             items = page.Rows
-                .Select(r => new LookupItem(Scalar(r, lk.KeyMember), Text(r, lk.DisplayMember)))
+                .Select(r => new LookupItem(Scalar(r, lk.KeyMember), Text(r, hops)))
                 .ToList();
         } catch (Exception ex) {
             loadError = ex.Message;
@@ -46,6 +51,21 @@
             ? (el.ValueKind == System.Text.Json.JsonValueKind.Number ? el.GetDecimal() : (object?)el.ToString())
             : null;
 
-    static string Text(System.Text.Json.JsonElement r, string member) =>
-        r.TryGetProperty(member, out var el) ? el.ToString() : "";
+    // Walks the display path one hop at a time; a missing hop yields "" rather than throwing, matching
+    // how every other binding here degrades when the model and the EDM disagree.
+    static string Text(System.Text.Json.JsonElement r, string[] hops) {
+        var el = r;
+        foreach (var hop in hops) {
+            if (el.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !el.TryGetProperty(hop, out var next)) return "";
+            el = next;
+        }
+        return el.ValueKind == System.Text.Json.JsonValueKind.Null ? "" : el.ToString();
+    }
+
+    // "Emblem","CityName" -> Emblem($select=CityName); deeper paths nest, mirroring GridBinding's
+    // ExpandClause so the two cannot drift apart.
+    static string ExpandFor(string[] hops) => hops.Length == 2
+        ? $"{hops[0]}($select={hops[1]})"
+        : $"{hops[0]}($expand={ExpandFor(hops[1..])})";
 }

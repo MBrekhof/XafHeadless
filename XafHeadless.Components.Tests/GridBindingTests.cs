@@ -197,6 +197,37 @@ public class GridBindingTests {
 
     // ---- Task 4.3 (GRID-001 server-side grouping): groupable ceiling + $apply translation ----
 
+    // ---- BUG-008: a display member that is itself a reference must resolve to a primitive ----
+
+    // CustomerStore's default property is Emblem, and Emblem is an ENTITY. The projector used to stop at
+    // one hop and send DisplayMember="Emblem", so the grid asked for $expand=Store($select=Emblem), got an
+    // object back, and rendered a permanently blank cell. It now walks to a primitive and sends the whole
+    // dotted path -- and because every wire form derives from PathSegments (the BUG-004 seam), one change
+    // covers the field name, the order path and the expand together.
+    [TestMethod]
+    public void A_two_hop_display_path_flows_through_every_wire_form() {
+        var store = Lookup("Store", "CustomerStore", "ID", "Emblem.CityName", "string");
+        Assert.AreEqual("Store_Emblem_CityName", GridBinding.FieldFor(store));
+        Assert.AreEqual("Store/Emblem/CityName", GridBinding.OrderPathFor(store));
+        Assert.AreEqual("Store($expand=Emblem($select=CityName))", GridBinding.BuildExpand(new[] { store }));
+    }
+
+    // The point of the whole exercise: the cell shows text. Payload shape confirmed live --
+    // $expand=Store($expand=Emblem($select=CityName)) returns {"Store":{"Emblem":{"CityName":"Tucson"}}}.
+    [TestMethod]
+    public void MaterializeRow_reads_a_two_hop_lookup_display_value() {
+        var store = Lookup("Store", "CustomerStore", "ID", "Emblem.CityName", "string");
+        var row = Row("""{"Store":{"Emblem":{"CityName":"Tucson"}}}""");
+        Assert.AreEqual("Tucson", GridBinding.MaterializeRow(row, new[] { store })["Store_Emblem_CityName"]);
+    }
+
+    // Resolving the path lifts GRID-005's ceiling for free: Store/Emblem/CityName is something $orderby
+    // CAN evaluate (probed live -- 200). The ceiling stays correct for paths that never reach a primitive.
+    [TestMethod]
+    public void A_resolved_display_path_is_sortable_again() {
+        Assert.IsTrue(GridBinding.IsServerSortable(Lookup("Store", "CustomerStore", "ID", "Emblem.CityName", "string")));
+    }
+
     // ---- GRID-005: refuse an impossible sort up front instead of recovering after the click ----
 
     // Order_ListView's Store column is a lookup whose display member is CustomerStore.Emblem -- and

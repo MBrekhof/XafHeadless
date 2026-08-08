@@ -51,9 +51,15 @@ restrictedCols, "restricted role denies read on this member — projector must o
             .Where(c => c.TryGetProperty("Lookup", out var l) && l.ValueKind == JsonValueKind.Object).ToList();
         Assert.IsNotEmpty(lookups, "Order_ListView must project at least one lookup column for this to prove anything");
 
-        var store = lookups.Single(c => c.GetProperty("Member").GetString() == KnownModel.OrderNonPrimitiveLookupColumn);
-        Assert.AreEqual("lookup", store.GetProperty("Lookup").GetProperty("DisplayDataType").GetString(),
-            $"{KnownModel.OrderNonPrimitiveLookupColumn} displays a reference, not a primitive -- the client needs the type to refuse the sort");
+        // BUG-008: the display path is walked to a PRIMITIVE, not stopped at the first hop. Store's
+        // default property is Emblem (an entity) whose own default property is CityName (a string), so
+        // the projection is the dotted path and the type is the type of what it lands on. Stopping early
+        // is what left the column permanently blank.
+        var store = lookups.Single(c => c.GetProperty("Member").GetString() == KnownModel.OrderTwoHopLookupColumn);
+        Assert.AreEqual(KnownModel.OrderTwoHopDisplayPath, store.GetProperty("Lookup").GetProperty("DisplayMember").GetString(),
+            "a display member that is itself a reference must resolve through to a primitive");
+        Assert.AreEqual("string", store.GetProperty("Lookup").GetProperty("DisplayDataType").GetString(),
+            "the projected type is the type of what the path LANDS on, which is what makes the column sortable again");
 
         foreach (var c in lookups)
             Assert.IsFalse(string.IsNullOrEmpty(c.GetProperty("Lookup").GetProperty("DisplayDataType").GetString()),

@@ -1,5 +1,45 @@
 # XafHeadless — DONE
 
+#### BUG-009: Clicking a nested row navigated to a DetailView that does not exist (ID: 1243)
+
+**Done 2026-08-09.** Found while starting CRUD-002, which needs the same id. Every nested tab was
+affected, and it had been broken since nested rows became clickable.
+
+`LayoutNodeRenderer.NavigateToRow` derived its target by swapping `_ListView` → `_DetailView` on the
+**nested** view id — a convention its own comment said "falls out naturally, no new plumbing". It does for a
+top-level list (`Order_ListView` → `Order_DetailView`) and not for a nested one, which is named
+`{Master}_{Collection}_ListView`. So `Order_OrderItems_ListView` became `Order_OrderItems_DetailView`.
+Confirmed live: that id is a **404**, while the child's real view, `OrderItem_DetailView`, is a 200. A
+child's detail view is named after its **type**, not after the collection that holds it.
+
+**Why nothing caught it:** the tab renders correctly, the click is the last step, and the failure arrives as
+the DetailView's "failed to load" state rather than an exception — so it looked like a data problem, not a
+routing bug. No test clicked a nested row. One does now.
+
+**Fix: stop deriving it.** The model knows — `IModelClass.DefaultDetailView` (verified in installed 26.1
+source, `Model/CommonInterfaces.cs:258`) — so the projector sends `DetailViewId` on the `nestedList` node
+and the client uses it. The old derivation survives only as the fallback for a host predating the field, so
+an older Api degrades to today's behaviour rather than to nothing.
+
+The E2E asserts the URL **and** that the view renders (Save button present, no "failed to load"): asserting
+the URL alone would still pass against a 404 view, which is the exact failure this guards. No
+revert-to-prove cycle was needed, unlike GRID-005's: the old code produced
+`/detail/Order_OrderItems_DetailView/…`, which cannot match a regex requiring `/detail/OrderItem_DetailView/`.
+
+**Also here, for CRUD-002:** `OrderItem` joins `SaveController.ExposedTypes`. That allowlist is a deliberate
+subset of the OData surface, and its own note says to extend it when a type needs a validating save path —
+inline nested editing of an aggregated child is exactly that. Proven on the wire before the client work:
+`POST api/save/OrderItem {"Order":"<masterKey>"}` → **201** with the child count going 1→2, and
+`DELETE api/save/OrderItem/{key}` → **204** with the count back to 1. The probe row was deleted.
+
+Tests: `Api.Tests` **75/75** (+1 — every nested list must carry a detail view id the host can actually
+serve, probed per node rather than string-matched), `Components.Tests` 111/111, E2E **13/14** (+1; the
+failure is `JobServerE2ETests` needing smtp4dev). Build 0 warnings.
+
+Files: `ViewMetadataProjector.cs`, `ViewMetadataDtos.cs`, `Contracts/ViewMetadata.cs`,
+`LayoutNodeRenderer.razor`, `SaveController.cs`, `DetailViewMetadataTests.cs`,
+`NestedRowNavigationE2ETests.cs` (new).
+
 #### EDIT-001: Editor inventory, and honouring the editor an app actually declared (ID: 1233)
 
 **Done 2026-08-09.** MIG-002 asked for an editor inventory. The audit found a defect, not just a list.

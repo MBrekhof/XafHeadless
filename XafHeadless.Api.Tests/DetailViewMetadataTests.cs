@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -51,6 +52,31 @@ public class DetailViewMetadataTests : TestBase {
             && n.TryGetProperty("Member", out var m) && m.GetString() == KnownModel.EmployeeRequiredMember);
         Assert.IsTrue(item.GetProperty("Required").GetBoolean(),
             "Employee carries a real [RuleRequiredField] on this member — metadata must report Required:true");
+    }
+
+    // BUG-009: a nested row click derived its target by swapping "_ListView" -> "_DetailView" on the
+    // NESTED view id. That works for a top-level list (Order_ListView -> Order_DetailView) and not for a
+    // nested one: Order_OrderItems_ListView becomes Order_OrderItems_DetailView, which does not exist
+    // (confirmed live: 404, while OrderItem_DetailView is 200). The child's detail view is named after its
+    // TYPE, not after the collection. The model knows the answer via IModelClass.DefaultDetailView, so the
+    // projector sends it rather than letting the client guess.
+    [TestMethod]
+    public async Task Nested_list_carries_its_childs_real_detail_view_id() {
+        var client = await GetClientAsync("Admin");
+        var meta = await client.GetFromJsonAsync<JsonElement>($"api/model/views/{KnownModel.OrderDetailViewId}");
+        var nested = MetadataTestHelpers.Flatten(meta.GetProperty("Layout"))
+            .Where(n => n.GetProperty("Kind").GetString() == "nestedList").ToList();
+        Assert.IsNotEmpty(nested, "Order_DetailView must project at least one nested list for this to prove anything");
+
+        foreach (var n in nested) {
+            var detailViewId = n.GetProperty("DetailViewId").GetString();
+            Assert.IsFalse(string.IsNullOrEmpty(detailViewId),
+                $"nested list '{n.GetProperty("ViewId").GetString()}' must carry its child's detail view id");
+            // The whole point: it must be a view the host can actually serve.
+            var probe = await client.GetAsync($"api/model/views/{detailViewId}");
+            Assert.AreEqual(HttpStatusCode.OK, probe.StatusCode,
+                $"'{detailViewId}' must be a real view -- deriving it from the nested list id produced a 404");
+        }
     }
 
     // EDIT-001: the projector classified an item's editor from the member's CLR TYPE alone and never read

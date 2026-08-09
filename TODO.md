@@ -26,6 +26,11 @@ walks the default-property chain to a primitive and sends the dotted path `Emble
 2026-08-09 — see `docs/DONE.md`. It also lifted GRID-005's ceiling for that column, which cost the
 ceiling its only live E2E subject — tracked as [[TEST-003]] below._
 
+_BUG-009 (clicking a nested row navigated to a DetailView that does not exist — the `_ListView` →
+`_DetailView` swap is wrong for a nested view named `{Master}_{Collection}_ListView`; the projector now
+sends the child's real `DetailViewId` from `IModelClass.DefaultDetailView`) fixed 2026-08-09 — see
+`docs/DONE.md`. Every nested tab was affected; no test had ever clicked a nested row._
+
 #### GRID-006: Date filtering leans on `date()` because the EDM and CLR types disagree (ID: 1223)
 
 **Ceiling accepted by BUG-003 (2026-08-08, `docs/DONE.md`), with the cost written down.** The EDM types

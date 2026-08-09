@@ -30,7 +30,9 @@ public record AppearanceRuleDto(string Criteria, IReadOnlyList<string> TargetIte
 public record LayoutNode(string Kind, string? Caption, string? Member, string? Editor,
     bool? AllowWrite, bool? Required, int? MaxLength, string? ViewId, string? MasterKeyMember,
     LookupMetadata? Lookup, List<EnumValueMetadata>? Enum, List<LayoutNode>? Children, bool? Aggregated = null,
-    string? EditorAlias = null);
+    string? EditorAlias = null,
+    // BUG-009: the CHILD type's detail view (nestedList only), from the model rather than derived.
+    string? DetailViewId = null);
 public record ActionMetadata(string Id, string Caption, bool SelectionRequired);
 
 // GAP-004: mirror of XafHeadless.Api/Metadata/ViewMetadataDtos.cs's NavigationItemDto.

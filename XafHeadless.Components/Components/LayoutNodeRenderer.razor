@@ -50,7 +50,7 @@
             @if (!string.IsNullOrEmpty(node.Caption)) { <div class="fw-bold small text-muted mb-1">@node.Caption</div> }
             <XafListView ViewId="@(node.ViewId ?? "")" MasterKeyMember="@node.MasterKeyMember" MasterKey="@State.ObjectKey"
                          MasterKeyName="@State.KeyMember"
-                         OnRowSelected="@(key => NavigateToRow(node.ViewId, key))" />
+                         OnRowSelected="@(key => NavigateToRow(node, key))" />
         </div>
         break;
 }
@@ -59,11 +59,21 @@
     [Parameter] public LayoutNode Node { get; set; } = default!;
     [CascadingParameter] public DetailViewState State { get; set; } = default!;
 
-    // Nested row click -> that row's own detail view, same "_ListView" -> "_DetailView" convention
-    // ListPage.razor already uses for the top-level list (falls out naturally, no new plumbing).
-    void NavigateToRow(string? nestedViewId, string key) {
-        if (string.IsNullOrEmpty(nestedViewId)) return;
-        Navigation.NavigateTo($"/detail/{nestedViewId.Replace("_ListView", "_DetailView")}/{key}");
+    // BUG-009: nested row click -> that row's own detail view, taken from the projected DetailViewId.
+    //
+    // This used to reuse the "_ListView" -> "_DetailView" swap that ListPage.razor applies to a TOP-LEVEL
+    // list, on the theory that it "falls out naturally". It does not: a nested view is named
+    // {Master}_{Collection}_ListView, so Order_OrderItems_ListView became Order_OrderItems_DetailView --
+    // a view that does not exist (404), while the child's real one is OrderItem_DetailView. Every nested
+    // tab was affected; nothing caught it because the failure lands as the DetailView's "failed to load"
+    // state after the click, and no test clicked a nested row.
+    //
+    // The old derivation stays only as the fallback for a host that predates DetailViewId.
+    void NavigateToRow(LayoutNode node, string key) {
+        var target = node.DetailViewId
+            ?? node.ViewId?.Replace("_ListView", "_DetailView");
+        if (string.IsNullOrEmpty(target)) return;
+        Navigation.NavigateTo($"/detail/{target}/{key}");
     }
 
     RenderFragment Children(LayoutNode n) => @<text>

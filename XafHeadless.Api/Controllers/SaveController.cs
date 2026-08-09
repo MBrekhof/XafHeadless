@@ -40,8 +40,13 @@ public class SaveController : ControllerBase {
     // cover the two save/validation demo scenarios this migration targets; SVR-001 Task 2.3 adds
     // JobDefinition so the generic client grid can create/edit a demo schedule through this same
     // validated path -- OData exposes it read-only, this is its only write path).
+    // CRUD-002 adds OrderItem: an AGGREGATED child of Order, and inline nested editing cannot exist
+    // without a validating write path for the child type itself. This is the extension the note above
+    // anticipates, not a widening of principle -- OrderItem is only reachable as a composite child, its
+    // writes run the same 422 validation contract, and per-member CanWrite still gates every field.
     static readonly Dictionary<string, Type> ExposedTypes = new(StringComparer.OrdinalIgnoreCase) {
         [nameof(Order)] = typeof(Order),
+        [nameof(OrderItem)] = typeof(OrderItem),
         [nameof(Employee)] = typeof(Employee),
         [nameof(JobDefinition)] = typeof(JobDefinition),
     };

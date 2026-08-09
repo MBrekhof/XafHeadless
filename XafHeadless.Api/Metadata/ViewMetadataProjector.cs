@@ -86,7 +86,11 @@ public class ViewMetadataProjector {
                 var masterKey = mi.AssociatedMemberInfo?.Name ?? "";
                 // GAP-010: IsAggregated tells the client Link/Unlink (shared) vs New/Delete (owned).
                 return new LayoutNode("nestedList", caption, pe.PropertyName, null, null, null, null,
-                    nestedViewId, masterKey, null, null, null, mi.IsAggregated);
+                    nestedViewId, masterKey, null, null, null, mi.IsAggregated,
+                    // BUG-009: ask the model for the child's detail view instead of letting the client
+                    // derive one. Deriving from the NESTED list id gives Order_OrderItems_DetailView, a
+                    // 404 -- the child's detail view is named after its type (OrderItem_DetailView).
+                    DetailViewId: ChildDetailViewId(mi.ListElementTypeInfo!.Type));
             }
             // BUG-001: a member with IsList but a non-business-object element type is a blob (byte[] -> an
             // "image" item), NOT a nested collection view. Render byte[] as an image item; omit any other
@@ -334,6 +338,14 @@ public class ViewMetadataProjector {
     // Deliberately NOT IModelMember.PropertyEditorType: that resolves the alias to a platform-specific
     // editor Type (a WinForms/Blazor class) which means nothing to a headless client. The alias STRING is
     // the portable half of the contract.
+    // BUG-009: the child type's own DetailView, straight from the model (IModelClass.DefaultDetailView,
+    // verified in installed 26.1 source, Model/CommonInterfaces.cs:258). Falls back to the XAF naming
+    // convention only if the class has no default detail view, which would itself be unusual -- and a
+    // wrong id here is visible as a metadata 404 rather than silently wrong data.
+    string? ChildDetailViewId(Type childType) =>
+        model.BOModel.FirstOrDefault(c => c.TypeInfo?.Type == childType)?.DefaultDetailView?.Id
+        ?? $"{childType.Name}_DetailView";
+
     // Fully qualified rather than a `using DevExpress.Persistent.Base`: that namespace carries a lot of
     // common names and this file already juggles several DevExpress namespaces.
     static string? ResolveEditorAlias(IMemberInfo mi) {

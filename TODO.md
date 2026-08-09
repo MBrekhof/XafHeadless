@@ -131,6 +131,26 @@ done 2026-08-09 — see `docs/DONE.md`. **Both card premises were wrong:** the e
 write-capable, and the real defect was the 50-row OData fetch losing the current value (Employee has
 51 rows). Remaining ceiling — server-side search *in the combo* — is [[LOOKUP-002]] below._
 
+#### RPT-002: Lookup-valued report parameters, and running a report for the current selection (ID: 1244)
+
+**The two pieces RPT-001 deliberately left, now that reporting works end to end.**
+
+**1. Lookup-valued parameters.** `ProductOrders.Product` is a `Guid` parameter identifying a Product.
+Today it projects as `string` and renders as a text box — honest (you can paste a key) but crude. The report
+carries the answer: `DynamicListLookUpSettings` names the data source and value/display members, and 8 of
+this module's parameters use it. Resolving it would let the parameter project as a `lookup`, at which point
+[[LOOKUP-001]]'s picker renders it with no further work — the payoff for making the parameter form reuse
+the DetailView editors. Verify the settings object against installed 26.1 source first.
+
+**2. Run a report for the current view/selection.** The plumbing exists: the run endpoint accepts a
+`criteria` string and `ReportRenderService` passes it to `SetupReport`. What is missing is a Run action on a
+list view that hands the grid's criteria through. The ceiling that makes it more than a button: the grid's
+filter is a DevExpress `CriteriaOperator` translated for OData, while a report wants XAF criteria over the
+report's own data source — close but not identical, and a filter that silently means something different in
+the report than on screen is worse than no button. Check the translation before wiring it.
+
+Neither is blocking; reporting is usable without both.
+
 #### LOOKUP-002: Server-side search in the lookup editor (DxComboBox CustomData) (ID: 1240)
 
 **The ceiling LOOKUP-001 stopped at, stated rather than implied.** `api/lookup/{type}` already supports
@@ -176,29 +196,10 @@ So a metadata-driven projector has nothing to project. This is the first concret
 
 Recommendation: **option 2 now, option 1 only on explicit request.**
 
-#### RPT-001: Client-side reporting (ID: 1230)
-
-**Catalogue, run, collect, the UI, and server-side PARAMETERS all DONE 2026-08-09 (`docs/DONE.md`). Only
-the client parameter FORM remains.**
-
-**The card named the wrong parameter mechanism** — it said `ReportParametersObjectBase`, of which this
-module declares none. Its reports use `DevExpress.XtraReports.Parameters.Parameter` (27 of them), the
-report's own collection, which is the better fit anyway: it lives on the report and needs no companion XAF
-type.
-
-`GET api/reports/{id}/parameters` projects `{Name, Caption, Editor, DefaultValue}` with `Editor` reusing
-the hints `ClassifyDataType` already emits, so a form can be built from the existing editors. Values are
-supplied on the run and converted to each parameter's declared type: an unknown name is ignored (a stale
-client must not be able to fail a render), an unconvertible value fails the render loudly (silently using
-the default would answer the wrong question). Both proven live.
-
-**Still to do:**
-1. **The client parameter form** — fetch `/parameters`, render with `EditorMap`, post the values with Run.
-   Reports with no parameters (several here) must keep running with one click.
-2. **Lookup-valued parameters** — `DynamicListLookUpSettings` carries the target type for parameters like
-   `ProductOrders.Product` (a Guid). Today those project as `string`, which is honest but crude; resolving
-   the settings would let LOOKUP-001's picker fill them in.
-3. **Run for the current view/selection** — pass the grid's criteria through as the report criteria.
+_RPT-001 (client-side reporting: catalogue, run, collect, download, and a parameter form that reuses
+the DetailView editors) **done 2026-08-09** — see `docs/DONE.md`. Two nice-to-haves were left
+deliberately and are [[RPT-002]] below: lookup-valued parameters, and running a report for the current
+grid selection._
 
 #### EDIT-002: Render DxHtmlPropertyEditor members safely (the XSS decision) (ID: 1241)
 

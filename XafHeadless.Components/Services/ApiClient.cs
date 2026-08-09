@@ -97,11 +97,26 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
     // RPT-001: enqueue a render. Returns the correlation id to poll, or null when the run was refused --
     // the API answers 404 for a report this user cannot see, so a null here is "you may not run that",
     // not a transport failure.
-    public async Task<Guid?> RunReportAsync(string reportId, string? criteria = null) {
+    // A report's own parameters, so the client can ask for values before running it. Empty on failure --
+    // and empty is also the honest answer for the several reports here that declare none.
+    public async Task<ReportParameter[]> GetReportParametersAsync(string reportId) {
+        ApplyAuthHeader();
+        var response = await http.GetAsync($"api/reports/{Uri.EscapeDataString(reportId)}/parameters");
+        if (CheckUnauthorized(response)) return [];
+        if (!response.IsSuccessStatusCode) {
+            LogDegraded(response, $"parameters for report '{reportId}' not loaded");
+            return [];
+        }
+        return await response.Content.ReadFromJsonAsync<ReportParameter[]>() ?? [];
+    }
+
+    public async Task<Guid?> RunReportAsync(string reportId, string? criteria = null,
+            Dictionary<string, string?>? parameters = null) {
         ApplyAuthHeader();
         var url = $"api/reports/{Uri.EscapeDataString(reportId)}/run"
                   + (string.IsNullOrWhiteSpace(criteria) ? "" : $"?criteria={Uri.EscapeDataString(criteria)}");
-        var response = await http.PostAsync(url, null);
+        // Always a JSON body, even when empty: the endpoint's [FromBody] binder rejects a bodiless POST.
+        var response = await http.PostAsJsonAsync(url, parameters ?? new Dictionary<string, string?>());
         if (CheckUnauthorized(response)) return null;
         if (!response.IsSuccessStatusCode) {
             LogDegraded(response, $"report '{reportId}' could not be started");

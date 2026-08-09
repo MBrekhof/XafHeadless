@@ -1,19 +1,26 @@
 @page "/reports"
+@using System.Globalization
+@using XafHeadless.Components.Components
+@using XafHeadless.Components.Components.Editors
 @using XafHeadless.Components.Contracts
 @inject ApiClient Api
+@inject EditorMap EditorMap
 @inject IJSRuntime JS
 
 <PageTitle>Reports</PageTitle>
 
-@* RPT-001: the report catalogue, with Run.
+@* RPT-001: the report catalogue, with Run and a parameter form.
 
    Rendering happens in the JOB SERVER, never here: it is CPU-heavy and pulls native dependencies (Skia),
-   which is why SVR-001 put it in a separate worker and why MIG-002 keeps it off the API request path. So
-   Run enqueues and returns a correlation id, and this page polls until the PDF exists.
+   which is why SVR-001 put it in a separate worker and MIG-002 keeps it off the API request path. Run
+   enqueues and this page polls until the PDF exists.
 
-   The download goes through JS interop rather than a plain link because the collect endpoint is
-   authenticated with a Bearer token -- a browser following an <a href> would send no Authorization header.
-   The bytes are fetched in C#, where the token lives, and streamed to the browser. *@
+   The download goes through JS interop rather than a link because the collect endpoint is
+   Bearer-authenticated -- a browser following an <a href> would send no Authorization header.
+
+   The parameter form renders through the SAME editors a DetailView uses. That is why the API projects a
+   parameter's type as the same hint ClassifyDataType emits: a synthetic LayoutNode plus a
+   DetailViewState is all it takes, so a date parameter gets the real date editor instead of a text box. *@
 <AuthGuard>
     <div class="xaf-detail">
         <h3 class="mb-3">Reports</h3>
@@ -35,16 +42,45 @@
                     @foreach (var report in reports) {
                         <tr>
                             <td>@report.Name</td>
-                            @* Two reports in this catalogue are both called "Profile"; the stable
-                               resource-type name is the only thing telling them apart. *@
+                            @* Two reports here are both called "Profile"; the stable resource-type name is
+                               the only thing telling them apart. *@
                             <td class="text-muted small">@report.Id</td>
                             <td class="text-end">
                                 <DxButton Text="@(running == report.Id ? "Running…" : "Run")"
                                           RenderStyle="ButtonRenderStyle.Primary"
                                           Enabled="@(running is null)"
-                                          Click="@(() => Run(report))" />
+                                          Click="@(() => Start(report))" />
                             </td>
                         </tr>
+                        @if (promptFor == report.Id && parameters.Length > 0 && paramState is not null) {
+                            <tr>
+                                <td colspan="3" class="bg-light">
+                                    <div class="p-2">
+                                        <div class="fw-bold small mb-2">Parameters for “@report.Name”</div>
+                                        <CascadingValue Value="paramState">
+                                            @foreach (var node in parameterNodes) {
+                                                <div class="mb-2">
+                                                    <div class="small text-muted">@node.Caption</div>
+                                                    @if (EditorMap.Resolve(node) is { } editorType) {
+                                                        <DynamicComponent Type="editorType"
+                                                                          Parameters="@(new Dictionary<string, object> { ["Node"] = node })" />
+                                                    } else {
+                                                        <span class="badge bg-warning text-dark">unsupported parameter editor: @node.Editor</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </CascadingValue>
+                                        <DxButton Text="Run report" RenderStyle="ButtonRenderStyle.Primary"
+                                                  Click="@(() => RunWithParameters(report))" />
+                                        <DxButton Text="Cancel" RenderStyle="ButtonRenderStyle.Secondary"
+                                                  Click="@(() => promptFor = null)" />
+                                        <div class="text-muted small mt-2">
+                                            Leave a value untouched to use the report’s own default.
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
                     }
                 </tbody>
             </table>
@@ -54,35 +90,99 @@
 
 @code {
     // Bounded so a job that never completes -- a dead worker, a render that throws -- ends in a message
-    // rather than a spinner that turns forever. 60 attempts at 1s is comfortably longer than the ~10s a
-    // demo report takes, while still failing within a minute.
+    // rather than a spinner that turns forever.
     const int MaxPolls = 60;
     static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     ReportSummary[] reports = [];
     bool loading = true, failed;
-    string? status, running;
+    string? status, running, promptFor;
+
+    ReportParameter[] parameters = [];
+    LayoutNode[] parameterNodes = [];
+    DetailViewState? paramState;
+    Dictionary<string, object?> paramValues = new(), paramChanges = new();
 
     protected override async Task OnInitializedAsync() {
         reports = await Api.GetReportsAsync();
         loading = false;
     }
 
-    async Task Run(ReportSummary report) {
+    // A report with no parameters runs on one click -- most of this catalogue has none, and making every
+    // report open an empty form would be worse than useless.
+    async Task Start(ReportSummary report) {
+        promptFor = null;
+        status = null;
+        failed = false;
+
+        parameters = await Api.GetReportParametersAsync(report.Id);
+        if (parameters.Length == 0) { await Run(report, null); return; }
+
+        BuildParameterForm();
+        promptFor = report.Id;
+    }
+
+    void BuildParameterForm() {
+        // The report's own defaults become the form's initial VALUES, so an untouched field records no
+        // change and the run omits it -- which the server reads as "use the report's default". Changes,
+        // not values, are what get sent.
+        paramValues = parameters.ToDictionary(p => p.Name, p => Parse(p.Editor, p.DefaultValue));
+        paramChanges = new();
+        parameterNodes = parameters
+            .Select(p => new LayoutNode("item", p.Caption, p.Name, p.Editor,
+                AllowWrite: true, Required: false, MaxLength: null, ViewId: null, MasterKeyMember: null,
+                Lookup: null, Enum: null, Children: null))
+            .ToArray();
+        paramState = new DetailViewState {
+            Values = paramValues,
+            Changes = paramChanges,
+            Api = Api,
+            OnChanged = StateHasChanged
+        };
+    }
+
+    // The API sends defaults as strings; the editors bind to CLR values. Anything unparseable becomes null
+    // rather than throwing -- a default this client cannot read is not a reason to refuse the whole form.
+    static object? Parse(string editor, string? raw) {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return editor switch {
+            "date" or "dateonly" => DateTime.TryParse(raw, CultureInfo.CurrentCulture, out var d)
+                                    || DateTime.TryParse(raw, CultureInfo.InvariantCulture, out d) ? d : null,
+            "int" or "decimal" => decimal.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var n)
+                                    ? n : null,
+            "bool" => bool.TryParse(raw, out var b) ? b : null,
+            _ => raw,
+        };
+    }
+
+    // Back to strings for the wire. Dates go out ISO so the server's invariant-culture conversion reads
+    // them the same way regardless of the browser's locale -- the one format both ends agree on.
+    static string? Format(object? value) => value switch {
+        null => null,
+        DateTime d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString(),
+    };
+
+    Task RunWithParameters(ReportSummary report) {
+        promptFor = null;
+        // Only what the user actually changed: an untouched parameter is deliberately absent so the
+        // report's own default applies, rather than this client echoing a default back as if chosen.
+        var supplied = paramChanges.ToDictionary(kv => kv.Key, kv => Format(kv.Value));
+        return Run(report, supplied);
+    }
+
+    async Task Run(ReportSummary report, Dictionary<string, string?>? supplied) {
         running = report.Id;
         failed = false;
         status = $"Rendering “{report.Name}”…";
 
-        var correlationId = await Api.RunReportAsync(report.Id);
-        if (correlationId is null) {
-            Fail($"“{report.Name}” could not be started.");
-            return;
-        }
+        var correlationId = await Api.RunReportAsync(report.Id, parameters: supplied);
+        if (correlationId is null) { Fail($"“{report.Name}” could not be started."); return; }
 
         for (var attempt = 0; attempt < MaxPolls; attempt++) {
             var result = await Api.CollectReportAsync(correlationId.Value);
             if (result is { } file) {
-                // DotNetStreamReference hands the bytes to the browser without a base64 round trip.
                 using var stream = new MemoryStream(file.Content);
                 using var streamRef = new DotNetStreamReference(stream);
                 await JS.InvokeVoidAsync("downloadFileFromStream", file.FileName, streamRef, file.ContentType);
@@ -93,8 +193,9 @@
             await Task.Delay(PollInterval);
         }
 
-        // Deliberately not silent: the job may still finish later, and saying so is more useful than
-        // pretending the run failed outright.
+        // The job may still finish later; saying so is more useful than declaring a failure that may not
+        // have happened. A render rejected for a bad parameter value ends here too -- the worker fails the
+        // job rather than quietly rendering with the default.
         Fail($"“{report.Name}” is taking longer than expected — it may still finish in the background.");
     }
 

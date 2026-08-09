@@ -1,5 +1,47 @@
 # XafHeadless — DONE
 
+#### RPT-001 (parameter form): Reporting is complete — a report asks for what it needs (ID: 1230)
+
+**Done 2026-08-09. RPT-001 is finished** apart from the two nice-to-haves noted below.
+
+Clicking Run now fetches the report's parameters first. A report that declares none — most of this
+catalogue — still runs on **one click**; making every report open an empty form would be worse than
+useless. A report that declares some gets an inline form, then runs with the supplied values.
+
+**The form reuses the DetailView's own editors**, which is what the shared hint vocabulary was for. A
+synthetic `LayoutNode` per parameter plus a standalone `DetailViewState` is the whole mechanism — so a
+`date` parameter renders through `DateEditor` rather than a text box, with no parallel editor set to
+maintain.
+
+**Only changed values are sent.** The report's defaults seed the form's *values*, so an untouched field
+records no change and is omitted from the run — which the server reads as "use the report's own default".
+Echoing a default back as if the user had chosen it would be a lie about intent, and would also defeat the
+server's deliberate distinction between "not supplied" and "supplied".
+
+Dates go out **ISO**, because the server converts with invariant culture; a browser-locale string would be
+read differently at the two ends.
+
+**A test asserted behaviour that this change made false, and was removed rather than patched.**
+`ReportRunE2ETests` covered "click Run → get a PDF" against `ProductOrders` — a report that now stops to
+ask. Its stronger assertions (size, `%PDF-` magic bytes) moved onto the parameterless test, which is the
+one that genuinely still runs in one click. Deleting a passing-in-spirit test needs the coverage to land
+somewhere; it did.
+
+**Verified by screenshot and behaviour**: the form shows Product (Guid → text) and OrderDate rendered as a
+real date editor. That last point is asserted **behaviourally, not by CSS class** — the API sends the
+default as `23/05/2024 00:00:00` and only a date editor re-renders it without the time component. Three
+DevExpress class-name guesses failed in this session; the value is observable, the class names are internal.
+
+Tests: `Api.Tests` 79/79, `Components.Tests` 113/113, E2E **18/19** (the remaining failure is still
+`JobServerE2ETests`, needing smtp4dev). Build 0 warnings.
+
+**Left undone, deliberately:** lookup-valued parameters (`DynamicListLookUpSettings` carries the target
+type for `ProductOrders.Product`, so LOOKUP-001's picker could fill it in — today it is an honest text
+box), and running a report for the current grid's selection.
+
+Files: `Pages/Reports.razor`, `ApiClient.cs`, `Contracts/ReportParameter.cs` (new),
+`ReportParametersE2ETests.cs` (new), `ReportRunE2ETests.cs` (removed).
+
 #### RPT-001 (parameters, server side): Reports declare parameters and runs can supply them (ID: 1230)
 
 **Done 2026-08-09 — the API half. The client parameter form is still open.**

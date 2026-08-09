@@ -1,5 +1,77 @@
 # XafHeadless — DONE
 
+#### NPO-001: Non-persistent (DomainComponent) types have no wire representation (ID: 1242)
+
+**Done 2026-08-09.** A whole class of XAF screen — computed/aggregate `[DomainComponent]` types with no
+`DbSet` — now has a wire representation. `Opportunity_ListView` renders real aggregated data in the client;
+before this it projected its metadata correctly and then loaded nothing, because OData cannot serve a type
+with no table at any URL.
+
+**The card's original shape was wrong and was corrected before any code was written.** It assumed serving
+these types meant reproducing XAF's mechanism — standing up a server-side `Frame` + `ListView` so the
+module's controllers activate. The goal is parity of *outcome*, not of mechanism, and the UI-free seam
+already existed: `ObjectsGetting` is an event on `NonPersistentObjectSpace`, no Frame or View required. The
+demo's handlers read `View.CollectionSource.Criteria`, which is what made them look UI-bound, but the same
+criteria arrive as `ObjectsGettingEventArgs.Criteria` — proved by the demo itself, whose *count* handler
+uses `e.Criteria` for that exact value (`QuoteAnalysisListViewController.cs:25`).
+
+**Option B of three, chosen by the owner.** The model declares the type and its views but says nothing
+about how a non-persistent type is populated — XAF's own answer is a C# controller, not a model node — so
+model-is-the-contract had nothing to read and something had to subscribe the population. Of (A) the app
+moves its subscription, (B) host-side registration, (C) don't support it, B keeps the module, its
+controllers and the running Blazor app untouched; the change lives in headless-host startup, which an
+adopting app is writing anyway.
+
+**What shipped:**
+
+- `NonPersistentRegistry` — the host declares which types it serves and how each is populated. Attached
+  per ObjectSpace from `builder.ObjectSpaceProviders.Events.OnObjectSpaceCreated`, the documented seam
+  (dxdocs 403164, which names `MySolution.WebApi/Startup.cs` for this exact shape). It subscribes
+  `ObjectsGetting` **and** `ObjectByKeyGetting` — the latter is the error-1021 trap, not optional.
+- `PopulateAdditionalObjectSpaces` in the same hook, without which a populator's `GetObjectsQuery<Quote>()`
+  has nothing to query. The aggregate therefore runs against the secured provider and is
+  permission-trimmed by XAF rather than by anything re-implemented here.
+- `GET api/nonpersistent/{type}` returning the **same envelope as OData** (`{"value":[…],"@odata.count":N}`),
+  so the client's whole grid binding is reused rather than forked. Read-only by nature: a computed object
+  has nowhere to save to, so there is no POST and should not be one.
+- `ViewMetadata.NonPersistent` (additive, nullable) so the client picks its data route. Only ever `true`,
+  never `false` — an ordinary view's payload is byte-for-byte what it was.
+
+**The cap is model-declared, so it invents no contract.** `IModelListView.TopReturnedObjects` is XAF's own
+per-view limit; the endpoint honours it and otherwise falls back to 5,000, matching `XafListView.RowCap`.
+Applied *after* population because it has to be — `ObjectsGettingEventArgs` carries no skip/top, so XAF
+itself always materialises the full set and bounds it afterwards. **This bounds the wire, not the app's
+memory**, and `@odata.count` keeps reporting the true total so the grid can say "showing the first N of M"
+rather than presenting a truncated set as complete.
+
+**Measured, not assumed.** The card previously recorded 10,000 `QuoteAnalysis` rows as a generator constant
+it could not observe. It is now observed: the endpoint reports `@odata.count = 10000` against the seeded
+tenant and returns exactly 5,000. `Opportunity` is 4 rows (the `Stage` enum minus `Summary`, which spans
+every other band and would double-count).
+
+**A defect the tests did not catch, and the screenshot did.** The first live render showed a **New** button
+on a computed view that has nowhere to save. Both inputs to the allow-set said yes — the model describes a
+generic ListView, and the security system grants create/delete on a type it holds no permissions for — so
+nothing represented "there is no write route". The projector now forces Edit/New/Delete off for these
+types, and both an API test and the E2E assert it. Green tests plus a passing build would have shipped it.
+
+**Demo-only scaffolding, flagged as such in the code.** `OutlookInspired.Module` is a read-only reference,
+so its handler bodies cannot be extracted into a method the controller and the host registration share —
+which is what a real adopting app should do. The query shape is restated in `OutlookInspiredPopulators`;
+the domain constants are not (`Stage.Range()` comes from the module), so the copies cannot drift on the
+thing that would produce wrong numbers.
+
+**Verification:** Api.Tests 85/85 (6 new), Components.Tests 113/113, plus a new E2E that logs in, renders
+the view and asserts the four stage rows and the absence of a New button. Three E2E/JobServer failures seen
+during the run are pre-existing and unrelated — one needs the smtp4dev container, and the
+"JobExecutionRecord reaches Success" family was reproduced on a clean `master` stash with all three hosts
+running before being ruled out.
+
+**Known cosmetic, and it is parity:** `Opportunity.Date` renders as `0001-01-01` because the module's own
+controller never sets it. Populating it here would invent data the app does not compute.
+
+Unblocks [[DASH-001]].
+
 #### RPT-001 (parameter form): Reporting is complete — a report asks for what it needs (ID: 1230)
 
 **Done 2026-08-09. RPT-001 is finished** apart from the two nice-to-haves noted below.

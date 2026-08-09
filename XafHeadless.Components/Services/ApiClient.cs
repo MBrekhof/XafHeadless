@@ -65,6 +65,24 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return new ODataPage(rows, total);
     }
 
+    // NPO-001: the read feed for non-persistent [DomainComponent] types (no DbSet -> OData cannot serve
+    // them at all). The server returns the SAME envelope as OData ({"value":[...],"@odata.count":N}), so
+    // this deliberately reuses ODataPage and everything downstream of it -- GridBinding.MaterializeRow does
+    // not know or care which route a row arrived by.
+    //
+    // No query parameters, and that is not an oversight: XAF's own ObjectsGetting contract carries no
+    // skip/top (ObjectsGettingEventArgs), so these rows cannot be paged at the source by anyone, XAF
+    // included. The server returns a capped set and reports the TRUE total in @odata.count.
+    public async Task<ODataPage> GetNonPersistentPageAsync(string type, CancellationToken ct = default) {
+        ApplyAuthHeader();
+        var response = await http.GetAsync($"api/nonpersistent/{type}", ct);
+        if (CheckUnauthorized(response)) return new ODataPage([], 0);
+        await EnsureSuccessAsync(response, ct);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var rows = doc.RootElement.GetProperty("value").EnumerateArray().Select(e => e.Clone()).ToArray();
+        return new ODataPage(rows, doc.RootElement.GetProperty("@odata.count").GetInt64());
+    }
+
     // Task 4.3 (GRID-001 server-side grouping): one $apply=groupby fetch. The XAF WebApi pipeline
     // returns aggregation results as a BARE JSON array (no @odata wrapper -- live probe evidence in the
     // companion headless implementation); the standard {"value":[...]} wrapper is tolerated

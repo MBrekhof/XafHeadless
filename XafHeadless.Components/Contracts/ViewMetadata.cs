@@ -10,7 +10,11 @@ namespace XafHeadless.Components.Contracts;
 public record ViewMetadata(string Id, string Type, string ObjectType, string KeyMember, string Caption,
     AllowSet Allow, List<ColumnMetadata>? Columns, LayoutNode? Layout, List<ActionMetadata> Actions,
     IReadOnlyList<AppearanceRuleDto>? Appearance = null,
-    IReadOnlyDictionary<string, IReadOnlyList<EnumValueMetadata>>? AppearanceEnums = null);
+    IReadOnlyDictionary<string, IReadOnlyList<EnumValueMetadata>>? AppearanceEnums = null,
+    // NPO-001: mirror of the API DTO. True for a view whose type has no DbSet and so cannot be served over
+    // OData -- the client fetches it from api/nonpersistent instead. Null (the default, and what every
+    // ordinary view sends) means the usual OData route.
+    bool? NonPersistent = null);
 public record AllowSet(bool Edit, bool New, bool Delete);
 public record ColumnMetadata(string Member, string Caption, string DataType, int? SortIndex,
     string? SortOrder, LookupMetadata? Lookup, List<EnumValueMetadata>? Enum);

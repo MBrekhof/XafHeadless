@@ -23,10 +23,15 @@ public class ViewMetadataProjector {
     readonly ISecurityProvider securityProvider;
     readonly IObjectSpaceFactory objectSpaceFactory;
     readonly HashSet<Type> exposedTypes;
+    readonly NonPersistent.NonPersistentRegistry nonPersistentRegistry;
 
     public ViewMetadataProjector(ISharedApplicationProvider applicationProvider,
         ISecurityProvider securityProvider, IObjectSpaceFactory objectSpaceFactory,
-        IOptions<WebApiOptions> webApiOptions) {
+        IOptions<WebApiOptions> webApiOptions, NonPersistent.NonPersistentRegistry nonPersistentRegistry) {
+        // NPO-001: the second data route. exposedTypes above is what api/odata serves; this is what
+        // api/nonpersistent serves. A type in neither has no data route, which is what BUG-002's
+        // unreachable-tab omission already handles.
+        this.nonPersistentRegistry = nonPersistentRegistry;
         // IModelApplication is not directly injectable in this headless host — reach it via the shared
         // XafApplication (Task 1 pattern), which is the same model the standard XAF UI would build.
         model = applicationProvider.GetContainer().Application.Model;
@@ -50,13 +55,22 @@ public class ViewMetadataProjector {
             .Select(ProjectColumn).ToList();
         var appearance = ProjectAppearance(list.ModelClass, viewId, isDetailView: false);
         var appearanceEnums = ProjectAppearanceEnums(list.ModelClass, columns.Select(c => c.Member), appearance, security, os, type);
+        // NPO-001: a computed non-persistent type is READ-ONLY by nature -- there is no table behind it, so
+        // there is nowhere for a write to go. The model still says AllowNew/AllowDelete (it describes a
+        // generic ListView) and the security system grants create/delete on a type it has no permissions
+        // for, so BOTH inputs to rule 2 say yes and the client would render a New button that cannot
+        // possibly save. This is the third input: no data route for writes means no write affordance.
+        var readOnly = nonPersistentRegistry.IsRegistered(type);
         return new ViewMetadata(viewId, "ListView", type.Name, list.ModelClass.TypeInfo.KeyMember.Name, list.Caption,
             new AllowSet(                                                    // rule 2: model ∩ security
-                Edit: list.AllowEdit && security.CanWrite(type, os),
-                New: list.AllowNew && security.CanCreate(type, os),
-                Delete: list.AllowDelete && security.CanDelete(type, os)),
+                Edit: !readOnly && list.AllowEdit && security.CanWrite(type, os),
+                New: !readOnly && list.AllowNew && security.CanCreate(type, os),
+                Delete: !readOnly && list.AllowDelete && security.CanDelete(type, os)),
             columns, Layout: null, Actions: new(),
-            Appearance: appearance, AppearanceEnums: appearanceEnums);
+            Appearance: appearance, AppearanceEnums: appearanceEnums,
+            // Only ever true, never false: an ordinary OData view stays null so its payload is byte-for-byte
+            // what it was before NPO-001.
+            NonPersistent: readOnly ? true : null);
     }
 
     // DetailView projection: walks the Layout tree (group/tabs/tab/item/nestedList), applying the

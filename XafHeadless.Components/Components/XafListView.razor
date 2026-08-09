@@ -37,6 +37,12 @@
                       RenderStyle="ButtonRenderStyle.Primary" />
         </div>
     }
+    @* NPO-001: a capped set must never read as a complete one. These rows cannot be paged at the source
+       (XAF's ObjectsGetting contract carries no skip/top), so when the server had more than it could send
+       the grid says so rather than presenting a truncated set silently. *@
+    @if (rows is not null && totalRows > rows.Count) {
+        <p class="text-muted mb-2"><em>Showing the first @rows.Count of @totalRows rows.</em></p>
+    }
     @* DxGrid binds either the in-memory rows or the GridCustomDataSource-based ODataGridDataSource
        (dxdocs DevExpress.Blazor.GridCustomDataSource, 26.1: the documented remote/on-demand binding,
        WASM-compatible). ContextMenus=Header is the column-header sub-menu; its grouping commands
@@ -228,6 +234,17 @@
             // page can't be committed under the new view's columns.
         }
         try {
+            // NPO-001: a non-persistent type has no OData entity set, so neither the count probe nor server
+            // mode applies -- both are $-query paths this route does not have and cannot grow, because
+            // ObjectsGettingEventArgs carries no skip/top. One fetch, in-memory binding, always. The server
+            // caps what it sends and reports the true total, which surfaces as the truncation note above.
+            if (meta.NonPersistent == true) {
+                var npPage = await Api.GetNonPersistentPageAsync(meta.ObjectType);
+                if (seq != loadSeq) return;   // superseded while fetching
+                totalRows = npPage.Total;
+                rows = npPage.Rows.Select(r => (ExpandoObject)GridBinding.MaterializeRow(r, columns, keyField, appearanceMembers)).ToList();
+                return;
+            }
             var nested = MasterKeyMember is not null && MasterKey is not null;
             if (!nested) {
                 var probe = await Api.GetPageAsync(meta.ObjectType, new ODataQuery(0, 0, null, filter, null, null));

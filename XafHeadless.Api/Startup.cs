@@ -74,6 +74,12 @@ public class Startup {
         services.AddScoped<IAuthenticationTokenProvider, JwtTokenProviderService>();
         services.AddScoped<Metadata.ViewMetadataProjector>();
         services.AddScoped<Metadata.NavigationProjector>();
+        // NPO-001 (option B): the host declares which non-persistent [DomainComponent] types it can serve
+        // and how each is populated. Singleton because it is immutable configuration -- the populators run
+        // per-request against a per-request ObjectSpace, not against anything held here.
+        // AddOutlookInspiredDemo is DEMO scaffolding; a real app registers its own (see the populator file).
+        services.AddSingleton(NonPersistent.OutlookInspiredPopulators
+            .AddOutlookInspiredDemo(new NonPersistent.NonPersistentRegistry()));
         services.AddScoped<Commands.IHeadlessCommand, Commands.OrderSummaryCommand>();
         services.AddScoped<Commands.IHeadlessCommand, Commands.EmailOrdersReportApiCommand>();
 
@@ -141,6 +147,27 @@ public class Startup {
                     options.UseLazyLoadingProxies();
                 })
                 .AddNonPersistent();
+            // NPO-001: the documented seam for serving non-persistent types from a headless host
+            // (dxdocs 403164, which names MySolution.WebApi/Startup.cs for exactly this shape).
+            //
+            // Two things happen per created ObjectSpace, and both are required:
+            //  1. PopulateAdditionalObjectSpaces -- without it a NonPersistentObjectSpace cannot reach
+            //     persistent data, so a populator's GetObjectsQuery<Quote>() has nothing to query. The
+            //     Owner guard is DevExpress's own: a nested composite space inherits its owner's.
+            //  2. Attach -- subscribes ObjectsGetting/ObjectByKeyGetting to the registry. This is the
+            //     whole of option B: the app's ListView controllers never activate here (no Frame, no
+            //     View), so nothing else would ever populate these types.
+            builder.ObjectSpaceProviders.Events.OnObjectSpaceCreated = context => {
+                if (context.ObjectSpace is CompositeObjectSpace composite && composite.Owner is not CompositeObjectSpace) {
+                    composite.PopulateAdditionalObjectSpaces(
+                        context.ServiceProvider.GetRequiredService<DevExpress.ExpressApp.Core.IObjectSpaceProviderService>(),
+                        context.ServiceProvider.GetRequiredService<DevExpress.ExpressApp.Core.IObjectSpaceCustomizerService>());
+                }
+                if (context.ObjectSpace is NonPersistentObjectSpace nonPersistent) {
+                    context.ServiceProvider.GetRequiredService<NonPersistent.NonPersistentRegistry>()
+                        .Attach(nonPersistent);
+                }
+            };
             builder.Security
                 .UseIntegratedMode(options => {
                     options.RoleType = typeof(PermissionPolicyRole);

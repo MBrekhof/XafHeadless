@@ -8,10 +8,16 @@ namespace XafHeadless.Api.Metadata;
 // on Employee_Evaluations_ListView. Without this, the client's caption->name rewrite has no metadata channel
 // for such members. Nullable/default and only ever populated when the view has appearance rules -- additive,
 // no cost/behavior change for rule-less views or existing payloads.
+// NPO-001: NonPersistent marks a view whose object type has no DbSet and therefore cannot be served over
+// OData at all. The client uses it to pick the data route (api/nonpersistent/{type} instead of
+// api/odata/{type}); everything else about the view -- columns, appearance, allow-set -- is projected
+// identically, because the model describes it identically. Nullable/default so existing positional
+// constructions and old payloads are unaffected, and an absent value means "ordinary OData view".
 public record ViewMetadata(string Id, string Type, string ObjectType, string KeyMember, string Caption,
     AllowSet Allow, List<ColumnMetadata>? Columns, LayoutNode? Layout, List<ActionMetadata> Actions,
     IReadOnlyList<AppearanceRuleDto>? Appearance = null,
-    IReadOnlyDictionary<string, IReadOnlyList<EnumValueMetadata>>? AppearanceEnums = null);
+    IReadOnlyDictionary<string, IReadOnlyList<EnumValueMetadata>>? AppearanceEnums = null,
+    bool? NonPersistent = null);
 public record AllowSet(bool Edit, bool New, bool Delete);
 public record ColumnMetadata(string Member, string Caption, string DataType, int? SortIndex,
     string? SortOrder, LookupMetadata? Lookup, List<EnumValueMetadata>? Enum);

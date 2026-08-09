@@ -94,6 +94,45 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return await response.Content.ReadFromJsonAsync<ReportSummary[]>() ?? [];
     }
 
+    // RPT-001: enqueue a render. Returns the correlation id to poll, or null when the run was refused --
+    // the API answers 404 for a report this user cannot see, so a null here is "you may not run that",
+    // not a transport failure.
+    public async Task<Guid?> RunReportAsync(string reportId, string? criteria = null) {
+        ApplyAuthHeader();
+        var url = $"api/reports/{Uri.EscapeDataString(reportId)}/run"
+                  + (string.IsNullOrWhiteSpace(criteria) ? "" : $"?criteria={Uri.EscapeDataString(criteria)}");
+        var response = await http.PostAsync(url, null);
+        if (CheckUnauthorized(response)) return null;
+        if (!response.IsSuccessStatusCode) {
+            LogDegraded(response, $"report '{reportId}' could not be started");
+            return null;
+        }
+        var accepted = await response.Content.ReadFromJsonAsync<RunAccepted>();
+        return accepted?.CorrelationId;
+    }
+
+    // Collect a finished render. Null means NOT READY YET (the API answers 202 while the job is still
+    // running), which is an ordinary state the caller polls on -- distinct from a failure, which is
+    // logged. Returns the PDF bytes and its content type once the job has committed.
+    public async Task<(byte[] Content, string ContentType, string FileName)?> CollectReportAsync(Guid correlationId) {
+        ApplyAuthHeader();
+        var response = await http.GetAsync($"api/reports/runs/{correlationId}");
+        if (CheckUnauthorized(response)) return null;
+        if (response.StatusCode == HttpStatusCode.Accepted) return null;      // still rendering
+        if (!response.IsSuccessStatusCode) {
+            LogDegraded(response, $"report run '{correlationId}' could not be collected");
+            return null;
+        }
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+                       ?? response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+                       ?? "report.pdf";
+        return (bytes, contentType, fileName);
+    }
+
+    public record RunAccepted(Guid CorrelationId);
+
     // CRUD-002: removes an object through the same validating write path as save/create (never OData
     // DELETE, which ODataReadOnlyMiddleware blocks host-wide). Returns whether it actually happened -- the
     // caller refreshes a grid on the strength of this, and a refused delete that reported success would

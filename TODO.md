@@ -178,29 +178,26 @@ Recommendation: **option 2 now, option 1 only on explicit request.**
 
 #### RPT-001: Client-side reporting (ID: 1230)
 
-**Catalogue, run and collect DONE 2026-08-09 (`docs/DONE.md`). Only the client Run button remains.**
+**Core DONE 2026-08-09 (`docs/DONE.md`): catalogue, run, collect, and the UI. Only report PARAMETERS
+remain.**
 
-The chain runs end to end: `POST api/reports/{id}/run` → 202 + correlation id → the JobServer renders →
-`GET api/reports/runs/{correlationId}` → 200 + PDF (verified live: 57,051 bytes, `%PDF-`). A new
-`RenderReportCommand`/`RenderReportHandler` renders a *chosen* report with **no email step**, so unlike the
-existing job it has no SMTP dependency.
+A user picks a report on `/reports`, clicks Run, and gets a PDF. The page enqueues a Hangfire job, polls
+(bounded — 60 x 1s, then a message saying the job may still finish rather than a spinner that turns
+forever), and streams the bytes to the browser. Rendering stays in the job server; the request path only
+enqueues and later serves stored bytes.
 
-`ReportArtifact.RequestedBy` is a **security boundary**: reports are rendered by a service user, so a PDF
-can contain rows the requester may not see. Collect requires a match — own 200, other user 403, anonymous
-401, all proven live — and artifacts from the scheduled job (no requester) are downloadable by nobody.
+The download uses JS interop because the collect endpoint is Bearer-authenticated — a plain `<a href>`
+would send no Authorization header. Bytes are fetched in C# and handed over as a `DotNetStreamReference`.
+
+`ReportArtifact.RequestedBy` is a security boundary: reports render as a service user, so a PDF can contain
+rows the requester may not see. Own 200 / other user 403 / anonymous 401, all proven live.
 
 **Still to do:**
-1. **Client Run button + poll + download** on `/reports`. The page currently states plainly that running is
-   not wired up, which is true of the page, not of the API.
-2. **Parameters/criteria** — the renderer and the run endpoint already accept a criteria string; projecting
-   a report's `ReportParametersObjectBase` into a form is the larger piece, with the `xaf-reporting`
-   skill's `Visible=false` and `GetCriteria()` vs `FilterString` traps to verify first.
-3. **Run for the current view/selection** — pass the grid's criteria through as the report criteria.
-
-Note for anyone touching host-shared BOs from the API: read through a **fresh DI scope**
-(`PrefsController.HostObjectSpace`'s pattern). The request scope fails two different silent ways — the
-non-secured factory hits the tenant context where the type is unregistered, and the secured factory returns
-FalseCriteria (zero rows, no error).
+1. **Report parameters.** The renderer and run endpoint already accept a criteria string, so passing one is
+   plumbing. Projecting a report's `ReportParametersObjectBase` into a form is the real piece — verify the
+   `xaf-reporting` skill's `Visible=false` and `GetCriteria()` vs `FilterString` traps first.
+2. **Run for the current view/selection** — pass the grid's criteria through as the report criteria. Small
+   once (1) exists.
 
 #### EDIT-002: Render DxHtmlPropertyEditor members safely (the XSS decision) (ID: 1241)
 

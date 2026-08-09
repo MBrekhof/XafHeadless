@@ -1,20 +1,26 @@
 @page "/reports"
 @using XafHeadless.Components.Contracts
 @inject ApiClient Api
+@inject IJSRuntime JS
 
 <PageTitle>Reports</PageTitle>
 
-@* RPT-001: the report catalogue. SVR-001 built real PDF rendering in the JobServer and nothing could
-   reach it -- there was no way to see which reports exist, the only caller hardcoded one report name, and
-   the rendered artifact was write-only. This is the first half: what is available.
+@* RPT-001: the report catalogue, with Run.
 
-   Running a report is NOT here yet, deliberately. Rendering is CPU- and native-dependency-heavy (Skia), so
-   MIG-002's boundary decision keeps it off the API request path -- it has to enqueue to the JobServer and
-   be collected as an artifact, which needs two endpoints that do not exist yet. Listing what is available
-   is honest on its own; a Run button that did the render inline would not be. *@
+   Rendering happens in the JOB SERVER, never here: it is CPU-heavy and pulls native dependencies (Skia),
+   which is why SVR-001 put it in a separate worker and why MIG-002 keeps it off the API request path. So
+   Run enqueues and returns a correlation id, and this page polls until the PDF exists.
+
+   The download goes through JS interop rather than a plain link because the collect endpoint is
+   authenticated with a Bearer token -- a browser following an <a href> would send no Authorization header.
+   The bytes are fetched in C#, where the token lives, and streamed to the browser. *@
 <AuthGuard>
     <div class="xaf-detail">
         <h3 class="mb-3">Reports</h3>
+
+        @if (status is not null) {
+            <div class="alert @(failed ? "alert-warning" : "alert-info") py-2" role="alert">@status</div>
+        }
 
         @if (loading) {
             <em>Loading…</em>
@@ -23,33 +29,78 @@
         } else {
             <table class="table">
                 <thead>
-                    <tr><th>Report</th><th>Identifier</th></tr>
+                    <tr><th>Report</th><th>Identifier</th><th class="text-end">Run</th></tr>
                 </thead>
                 <tbody>
                     @foreach (var report in reports) {
                         <tr>
                             <td>@report.Name</td>
-                            @* The stable resource-type name the renderer resolves; shown because two
-                               reports in this catalogue share the display name "Profile" and the id is
-                               the only thing that tells them apart. *@
+                            @* Two reports in this catalogue are both called "Profile"; the stable
+                               resource-type name is the only thing telling them apart. *@
                             <td class="text-muted small">@report.Id</td>
+                            <td class="text-end">
+                                <DxButton Text="@(running == report.Id ? "Running…" : "Run")"
+                                          RenderStyle="ButtonRenderStyle.Primary"
+                                          Enabled="@(running is null)"
+                                          Click="@(() => Run(report))" />
+                            </td>
                         </tr>
                     }
                 </tbody>
             </table>
-            <p class="text-muted small">
-                Running a report is not wired up yet — rendering happens in the job server, off the request path.
-            </p>
         }
     </div>
 </AuthGuard>
 
 @code {
+    // Bounded so a job that never completes -- a dead worker, a render that throws -- ends in a message
+    // rather than a spinner that turns forever. 60 attempts at 1s is comfortably longer than the ~10s a
+    // demo report takes, while still failing within a minute.
+    const int MaxPolls = 60;
+    static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
+
     ReportSummary[] reports = [];
-    bool loading = true;
+    bool loading = true, failed;
+    string? status, running;
 
     protected override async Task OnInitializedAsync() {
         reports = await Api.GetReportsAsync();
         loading = false;
+    }
+
+    async Task Run(ReportSummary report) {
+        running = report.Id;
+        failed = false;
+        status = $"Rendering “{report.Name}”…";
+
+        var correlationId = await Api.RunReportAsync(report.Id);
+        if (correlationId is null) {
+            Fail($"“{report.Name}” could not be started.");
+            return;
+        }
+
+        for (var attempt = 0; attempt < MaxPolls; attempt++) {
+            var result = await Api.CollectReportAsync(correlationId.Value);
+            if (result is { } file) {
+                // DotNetStreamReference hands the bytes to the browser without a base64 round trip.
+                using var stream = new MemoryStream(file.Content);
+                using var streamRef = new DotNetStreamReference(stream);
+                await JS.InvokeVoidAsync("downloadFileFromStream", file.FileName, streamRef, file.ContentType);
+                running = null;
+                status = $"“{report.Name}” downloaded.";
+                return;
+            }
+            await Task.Delay(PollInterval);
+        }
+
+        // Deliberately not silent: the job may still finish later, and saying so is more useful than
+        // pretending the run failed outright.
+        Fail($"“{report.Name}” is taking longer than expected — it may still finish in the background.");
+    }
+
+    void Fail(string message) {
+        running = null;
+        failed = true;
+        status = message;
     }
 }

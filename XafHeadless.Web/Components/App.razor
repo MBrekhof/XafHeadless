@@ -30,6 +30,9 @@
        visit, then WebAssembly once the runtime is cached. Routes lives in the RCL. *@
     <Routes @rendermode="InteractiveAuto" />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    @* RPT-001: the file-download helper. After blazor.web.js so the function exists before any component
+       can call it, and served from this host's wwwroot so it is available in both render phases. *@
+    <script src="download.js"></script>
 </body>
 
 </html>

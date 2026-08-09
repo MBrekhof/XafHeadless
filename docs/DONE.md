@@ -1,5 +1,42 @@
 # XafHeadless — DONE
 
+#### RPT-001 (run button): Reporting works from the UI, end to end (ID: 1230)
+
+**Done 2026-08-09. RPT-001's core is now complete** — a user picks a report, clicks Run, and gets a PDF.
+
+The page enqueues, polls, and streams the result to the browser. **Rendering still happens only in the job
+server**: the button starts a Hangfire job and waits, it does not render anything on the request path.
+
+**The download goes through JS interop, and that is forced, not stylistic.** The collect endpoint is
+authenticated with a Bearer token, so a browser following a plain `<a href>` would send no `Authorization`
+header and get a 401. The bytes are fetched in C#, where the token lives, and handed to the browser as a
+`DotNetStreamReference` — Blazor's documented stream-download pattern, with the object URL revoked straight
+after the click so a large PDF is not pinned for the life of the page.
+
+Polling is **bounded** (60 × 1s). A dead worker or a render that throws ends in a message rather than a
+spinner that turns forever — and the message says the job *may still finish in the background*, because it
+might, and claiming outright failure would be a guess.
+
+**The E2E asserts the browser's DOWNLOAD event, not a success message.** A page can say "downloaded"
+without a file existing; a download event cannot be faked by optimistic UI. It also checks the file's size
+and `%PDF-` magic bytes, since a zero-byte or HTML-error body would still fire the event. The download
+waiter is armed *before* the click, because the render takes seconds and a waiter attached afterwards could
+miss it.
+
+This is the **only** new test in the session that requires a running JobServer. That dependency is inherent
+— there is no render without a worker — not an oversight, and it is stated on the test.
+
+Tests: `Api.Tests` 79/79, `Components.Tests` 113/113, E2E **17/18** (+1; the one failure remains
+`JobServerE2ETests`, which needs smtp4dev — note the new job deliberately has no email step, which is why
+it works where that one does not). Build 0 warnings.
+
+**Still open on the card:** report parameters. The renderer and the run endpoint already accept a criteria
+string, so passing one is plumbing; projecting a report's `ReportParametersObjectBase` into a form is the
+real remaining piece.
+
+Files: `Pages/Reports.razor`, `ApiClient.cs`, `Web/wwwroot/download.js` (new), `Web/Components/App.razor`,
+`ReportRunE2ETests.cs` (new).
+
 #### RPT-001 (run + collect): A chosen report is rendered and served back to whoever asked (ID: 1230)
 
 **Done 2026-08-09.** The chain now runs end to end: `POST api/reports/{id}/run` → 202 + a correlation id →

@@ -48,8 +48,13 @@
     case "nestedList":
         <div class="xaf-nested-list my-2">
             @if (!string.IsNullOrEmpty(node.Caption)) { <div class="fw-bold small text-muted mb-1">@node.Caption</div> }
+            @* CRUD-002: AGGREGATED (composite) children are owned by their master, so New/Delete is the
+               right pair for them. A non-aggregated (shared) collection must use Link/Unlink instead --
+               deleting there would destroy an object other records may still reference. That is GAP-010's
+               distinction, and LayoutNode.Aggregated is projected precisely so the client can honour it. *@
             <XafListView ViewId="@(node.ViewId ?? "")" MasterKeyMember="@node.MasterKeyMember" MasterKey="@State.ObjectKey"
                          MasterKeyName="@State.KeyMember"
+                         AllowRowDelete="@(node.Aggregated == true)"
                          OnRowSelected="@(key => NavigateToRow(node, key))" />
         </div>
         break;

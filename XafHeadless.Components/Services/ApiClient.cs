@@ -81,6 +81,19 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return buckets.EnumerateArray().Select(e => e.Clone()).ToArray();
     }
 
+    // CRUD-002: removes an object through the same validating write path as save/create (never OData
+    // DELETE, which ODataReadOnlyMiddleware blocks host-wide). Returns whether it actually happened -- the
+    // caller refreshes a grid on the strength of this, and a refused delete that reported success would
+    // show a row vanishing and then reappearing.
+    public async Task<bool> DeleteAsync(string entity, string key) {
+        ApplyAuthHeader();
+        var response = await http.DeleteAsync($"api/save/{entity}/{key}");
+        if (CheckUnauthorized(response)) return false;
+        if (response.IsSuccessStatusCode) return true;
+        LogDegraded(response, $"delete of {entity} '{key}' was refused");
+        return false;
+    }
+
     // PH2-005 / LOOKUP-001: the lookup editor's candidate feed. `key` asks the server to include the object
     // the record ALREADY references even when it falls outside the page or the search -- without it an
     // editor can silently drop an existing value, which is what the old OData top-50 fetch did (Employee

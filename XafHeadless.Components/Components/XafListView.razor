@@ -74,6 +74,27 @@
                                   AllowSort="@(serverData is null ? default(bool?) : GridBinding.IsServerSortable(c))"
                                   FilterRowCellTemplate="@FilterCellFor(c)" />
             }
+            @* CRUD-002: per-row delete, only when the caller opted in AND the server projected
+               Allow.Delete (model AND security -- a role without delete permission never sees it, and a
+               client cannot re-enable it). Not sortable/groupable: it is a command, not data.
+
+               @onclick:stopPropagation is REQUIRED, not defensive. This grid navigates on row click
+               (SelectedDataItemChanged -> OnRowClick), and without stopping the event the delete click
+               ALSO selects the row -- so the user deleted the object and was then sent to its now-missing
+               detail view, which rendered "No OrderItem found with key ...". Found by looking at the E2E
+               screenshot: the test still passed, because after navigating away there are no nested rows
+               left to count. *@
+            @if (ShowDeleteColumn) {
+                <DxGridDataColumn Caption="" Width="90px" AllowSort="false" AllowGroup="false">
+                    <CellDisplayTemplate>
+                        <span @onclick:stopPropagation="true">
+                            <DxButton Text="Delete" RenderStyle="ButtonRenderStyle.Link"
+                                      Enabled="@(deleting is null)"
+                                      Click="@(() => DeleteRow(context.DataItem))" />
+                        </span>
+                    </CellDisplayTemplate>
+                </DxGridDataColumn>
+            }
         </Columns>
         <GroupSummary>
             @* Per-group row count in the group header. In-memory: DxGrid counts client-side. Server
@@ -92,6 +113,12 @@
     [Parameter] public EventCallback<string> OnRowSelected { get; set; }
     // CRUD-001: left unbound by nested lists on purpose -- see the New button's gate above.
     [Parameter] public EventCallback OnNewRequested { get; set; }
+    // CRUD-002: opt-in per-row Delete. Off by default so no existing grid grows a destructive command it
+    // was not asked for; LayoutNodeRenderer turns it on for AGGREGATED nested lists only, because a
+    // composite child is owned by its master and New/Delete is the right pair for it. A non-aggregated
+    // (shared) collection must use Link/Unlink instead -- deleting there would destroy an object other
+    // records may reference, which is GAP-010's distinction, not a detail.
+    [Parameter] public bool AllowRowDelete { get; set; }
 
     // GRID-001: RowCap bounds the in-memory load so a large view (Order = 55k rows) can't hang the browser.
     // Client-side grouping needs all rows in memory; we load at most this many and flag truncation in the UI.
@@ -335,6 +362,25 @@
         var key = GridBinding.ExtractRowKey((IDictionary<string, object?>)item, keyField);
         return key is null ? Task.CompletedTask : OnRowSelected.InvokeAsync(key);
     }
+
+    // CRUD-002: delete lives in a per-row command rather than on a selected row, because selecting a row
+    // in this grid NAVIGATES (OnRowClick -> the child's DetailView). A select-then-delete toolbar would
+    // have to fight that; a row command does not.
+    bool ShowDeleteColumn => AllowRowDelete && meta?.Allow.Delete == true;
+
+    async Task DeleteRow(object item) {
+        var key = GridBinding.ExtractRowKey((IDictionary<string, object?>)item, keyField);
+        if (key is null || meta is null) return;
+        deleting = key;
+        var ok = await Api.DeleteAsync(meta.ObjectType, key);
+        deleting = null;
+        if (!ok) { error = $"Could not delete this {meta.ObjectType}."; StateHasChanged(); return; }
+        // Reload through the normal load path so the row count, paging and any server-mode binding are all
+        // rebuilt the same way they were built in the first place.
+        await OnParametersSetAsync();
+    }
+
+    string? deleting;
 
     // GAP-008: per-user column-layout persistence, wired for Order_ListView ONLY (the proof view). This
     // component is reused for every list + nested tab; other views render with resize enabled but do NOT

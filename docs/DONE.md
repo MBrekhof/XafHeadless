@@ -1,5 +1,49 @@
 # XafHeadless — DONE
 
+#### CRUD-002 (delete half): Removing an aggregated child from its nested grid (ID: 1235)
+
+**Done 2026-08-09 — the Delete half only. The New half is still open on the card.**
+
+A nested tab was read/navigate only: an aggregated child could never be removed from the client. Now each
+row of an **aggregated** nested grid carries a Delete command. `ApiClient.DeleteAsync` goes through the same
+validating write path as save/create — never OData DELETE, which `ODataReadOnlyMiddleware` blocks host-wide
+— and returns whether the delete actually happened, because the caller refreshes a grid on the strength of
+it and a refused delete reporting success would show a row vanish and reappear.
+
+Gated twice, deliberately. `XafListView.AllowRowDelete` is opt-in so no existing grid grows a destructive
+command it was not asked for, and `LayoutNodeRenderer` sets it **only when `LayoutNode.Aggregated` is
+true** — GAP-010's distinction is not a detail: a composite child is owned by its master (New/Delete), while
+a shared collection needs Link/Unlink, since deleting there destroys an object other records may reference.
+The column additionally requires the server-projected `Allow.Delete` (model ∩ security).
+
+**Two defects found in this work, both mine, both caught by looking rather than assuming:**
+
+1. **The delete click also selected the row.** This grid navigates on row click
+   (`SelectedDataItemChanged` → `OnRowClick`), so deleting a child sent the user to the deleted object's
+   detail view, rendering *"No OrderItem found with key …"*. The code comment I had written asserted the
+   button "stops propagation implicitly by being its own click target". That was an assumption and it was
+   wrong; `@onclick:stopPropagation` is required, not defensive.
+2. **The E2E passed while being completely wrong.** Its "0 nested rows" assertion was satisfied *by having
+   navigated away* — there are no nested rows on the child's page either. Found only by opening the
+   screenshot, which showed the error page instead of the master. This is the second vacuous-pass this
+   session (GRID-005 was the first), and both were caught the same way: by looking at the evidence rather
+   than the green tick.
+
+Then the corrected test failed against **working** code, for a third locator reason: an empty DevExpress
+grid still renders a placeholder row whose class is **not** `.dxbl-grid-empty-row`, so counting `<tr>`
+reports 1 for an empty grid. It now counts **delete commands** — one per data row, which is the semantic
+question anyway ("is there still a child to delete?") — and pins the URL before counting anything.
+
+The test builds its own Order and child instead of borrowing demo rows, after a first attempt that looked
+for an Order with no items found none in forty: deleting a real order's child to make room would have
+destroyed demo data in order to test a delete.
+
+Tests: `Components.Tests` **113/113** (+2), `Api.Tests` 75/75, E2E **14/15** (+1; the failure is
+`JobServerE2ETests` needing smtp4dev). Build 0 warnings.
+
+Files: `ApiClient.cs`, `XafListView.razor`, `LayoutNodeRenderer.razor`, `ApiClientTests.cs`,
+`NestedDeleteE2ETests.cs` (new).
+
 #### BUG-009: Clicking a nested row navigated to a DetailView that does not exist (ID: 1243)
 
 **Done 2026-08-09.** Found while starting CRUD-002, which needs the same id. Every nested tab was

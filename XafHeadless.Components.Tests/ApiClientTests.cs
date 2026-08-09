@@ -48,6 +48,26 @@ public class ApiClientTests {
         return new ApiClient(http, auth, NullLogger<ApiClient>.Instance);
     }
 
+    // ---- CRUD-002: removing an aggregated child ----
+
+    // The delete endpoint answers 204 (proven live against the host before this was written). The caller
+    // refreshes the grid on success, so the outcome has to be reported rather than assumed.
+    [TestMethod]
+    public async Task DeleteAsync_reports_success_and_targets_the_save_route() {
+        var handler = new CapturingHandler(HttpStatusCode.NoContent, "");
+        var client = ClientWith(handler);
+
+        Assert.IsTrue(await client.DeleteAsync("OrderItem", "k1"));
+        StringAssert.Contains(handler.LastUrl!, "api/save/OrderItem/k1");
+    }
+
+    // A refused delete (no permission, or a validation rule) must NOT report success -- the row would
+    // vanish from the grid on refresh only to reappear, or worse, look deleted when it is not.
+    [TestMethod]
+    public async Task DeleteAsync_reports_failure_rather_than_pretending() {
+        Assert.IsFalse(await Client(HttpStatusCode.Forbidden, "").DeleteAsync("OrderItem", "k1"));
+    }
+
     // ---- PH2-005 / LOOKUP-001: the lookup candidate feed ----
 
     // The `key` parameter is the whole point: it asks the server to include the object the record ALREADY

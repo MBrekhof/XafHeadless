@@ -1,5 +1,56 @@
 # XafHeadless — DONE
 
+#### ARCH-001: Direction — headless is a growth path for painful views, not a replacement for XAF (ID: 1246)
+
+**Closed as a decision 2026-08-09 (owner) — no code.** Same shape as PH2-003: a recorded direction, so it
+does not get re-litigated from the backlog.
+
+**Not a replacement.** Nothing argues for retiring a working XAF Blazor Server app in favour of this. The
+parity list is long, it was expensive to earn, and it buys an outcome the original already delivered.
+
+**It is a growth path, adopted view by view, chosen by pain.** When a view hurts — server load,
+circuit-bound interaction latency, or a client XAF cannot be — that view gets projected. The rest of the app
+keeps running unchanged, and each projected view is independently reversible.
+
+**Why this framing survives the objections the stock-take raised.** It **self-selects into the cheap case**:
+adoption cost scales with behaviour density, and views chosen by pain are overwhelmingly read-heavy
+list/search/report screens — structure-heavy, behaviour-light, nearly free to project. And it **dissolves
+the strangler-fig problem** rather than solving it: the objection was that the fig cannot take the trunk,
+but under this framing completion was never the goal.
+
+**Two corrections this decision rests on, both made late and both material:**
+
+1. **"Losing controllers makes it useless" is too strong.** `IHeadlessCommand` already ships — id,
+   `Execute(IObjectSpace, string[])`, secured ObjectSpace, no bypass — with a controller, DI registration
+   and tests. An action's *declaration* is model-declared (`<ActionDesign><Action Id="…" …>`), so the button
+   projects; only its *effect* is re-registered. What is lost is **automatic** behaviour projection, plus
+   actions that are interactions rather than operations (`PopupWindowShowAction` has no command equivalent).
+2. **The performance claim needs precision.** Headless adds a hop for a single request. The real wins are
+   interaction latency (sort/filter/group happen in the browser instead of per-circuit round-trip), server
+   load and scale (no per-user circuit state; WASM moves rendering off the server), and work off the request
+   path. Pitch it as "offloads the server and makes heavy grids feel local", never "renders faster".
+
+**The test that decides cost, per application** — apply per app, not as a general verdict:
+
+> Does the ViewController **contain** the business logic, or does it just **trigger a service**?
+
+Triggers a service → the headless command is ~10 lines calling that same service; one implementation, two
+front doors, no drift. Contains the logic → every action means extracting it from its controller first, which
+is the rewrite metered out, with silent drift until it lands.
+
+**The architecture this settles into:** structure projects automatically; everything else is explicit
+host-side registration. Non-persistent types took a registry ([[NPO-001]]), actions take a command — the same
+shape twice, which is why the bill is not a constant.
+
+**Backlog consequence.** [[CHART-001]], [[PIVOT-001]], [[DASH-001]] and [[MODEL-001]] moved to Backlog: none
+is ever a first candidate under this direction. They are deprioritised, not refuted — the evidence on each is
+banked. What matters is the list/detail/report path being fast and correct, and that is largely done.
+
+**Logged, not resolved:** two front doors is a navigation seam for users, not only an architecture question.
+Decide deliberately which URL they land on and whether moving between the two reads as one product.
+
+Full stock-take, evidence-linked: https://claude.ai/code/artifact/6f65840b-f625-4443-86ee-927cfd9f84c5
+
 #### NPO-001: Non-persistent (DomainComponent) types have no wire representation (ID: 1242)
 
 **Done 2026-08-09.** A whole class of XAF screen — computed/aggregate `[DomainComponent]` types with no

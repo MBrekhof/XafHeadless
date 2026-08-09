@@ -46,6 +46,11 @@ literal compares against a CLR `DateTime`. Both are Api-host changes; measure be
 
 ## P2: Medium — platform breadth
 
+_**Direction set 2026-08-09: [[ARCH-001]]** (`docs/DONE.md`). Headless is a **growth path for individual
+painful views**, not a replacement for XAF. Cards below whose subject is never a first candidate under that
+direction — [[CHART-001]], [[PIVOT-001]], [[DASH-001]], [[MODEL-001]] — are **Backlog** on the board;
+deprioritised, not refuted. What matters is the list/detail/report path being fast and correct._
+
 ### Feature-completeness push (2026-08-08)
 
 #### FEAT-000: Feature-completeness roadmap — sequencing and the standing decisions (ID: 1238)
@@ -171,6 +176,9 @@ and `TValue` differ the component "may display the selected item's text incorrec
 is exactly the bug LOOKUP-001 fixed, so re-prove the current-value display rather than assuming it.
 
 #### CHART-001: Project and render XAF chart views (ID: 1228)
+
+**Backlogged 2026-08-09 under [[ARCH-001]]** — a chart view is never a first candidate when views are chosen
+by pain. Deprioritised, not refuted; the evidence below stands and the card stays open.
 
 **Premise checked against the model 2026-08-09, and it does not hold. Re-scoped before any code.**
 
@@ -359,14 +367,40 @@ is projectable only if we can reach the Blazor model extension.
 - **Parse the agnostic `Settings` blob.** Reverse-engineering a DevExpress serialization format. Named only
   to be rejected — it is re-implementing model logic, brittle across versions, and the README's line.
 
-**Recommendation: measure one more thing before deciding** — whether `SystemBlazorModule` can be registered
-in a UI-less host without a `BlazorApplication`, and what it costs at startup. If it loads inert, option 1
-is viable and [[PIVOT-001]] becomes real. If it demands UI infrastructure, option 2 is the answer and both
-[[PIVOT-001]] and [[CHART-001]] close with a single, well-evidenced platform limit.
+**SECOND SPIKE RUN 2026-08-09 — `SystemBlazorModule` registers INERT in this host. Recorded here because
+the branch that proved it (`spike/model-001-blazor-module`, `1d87e18`) was deleted afterwards; this is now
+the only record.**
 
-**Do not build any view until this is settled.**
+- The host **boots** with `.Add<DevExpress.ExpressApp.Blazor.SystemModule.SystemBlazorModule>()`. No
+  `BlazorApplication` required. The module has **no `Setup(XafApplication)` override**; its four overrides
+  are `ExtendModelInterfaces` (what we want), `GetDeclaredControllerTypes` (controllers never instantiate
+  without Frames, and a headless host creates none), `RegisterEditorDescriptors` (dormant without a UI) and
+  `GetDeclaredExportedTypes`.
+- Column nodes then carry `IModelColumnPivotGridBlazor.PivotFieldArea`, `.PivotGroupInterval` and
+  `.PivotSummaryType`.
+- **Api.Tests 85/85 green.** Extending the model for every view changed nothing any existing test observes.
+- **No new PackageReference needed** — `DevExpress.ExpressApp.Blazor` is already in the Api's transitive
+  closure (it arrives with the WebApi/demo dependency graph).
+
+**What it does NOT prove.** `PivotFieldArea` read `Row` for `QuoteAnalysis`'s first column — that is the
+interface's `[DefaultValue(PivotTableArea.Row)]`, **not** the demo's declaration. The declared values live in
+`OutlookInspiredDemo.Blazor.Server/Model.xafml`, which this host still does not merge. **Extenders and layer
+are a pair**: the module supplies the properties, the layer supplies the values, and neither alone is
+sufficient. An earlier revision of this card treated them as alternatives; that was wrong.
+
+**So option 1 is technically viable, and the remaining question is whether it is wanted.** Under the
+direction recorded in [[ARCH-001]] (headless as a growth path for individual painful views, not a
+replacement) a dashboard/chart/pivot is never a first candidate, so this card is **deprioritised to Backlog
+rather than closed** — the evidence is banked and the option stays open if a target app ever needs a pivot
+projected.
+
+**Do not build any view against this without revisiting ARCH-001 first.**
 
 #### PIVOT-001: Project and render XAF PivotGrid (analysis) views (ID: 1227)
+
+**Backlogged 2026-08-09 under [[ARCH-001]]** — a pivot is never a first candidate when views are chosen by
+pain. Deprioritised, not refuted: [[MODEL-001]]'s spike proved the route is technically viable, so this
+reopens cheaply if a target app ever needs one.
 
 **PREMISE CORRECTED 2026-08-09. The earlier finding — "not model-declared, so there is nothing to project"
 — was WRONG, and wrong in a way worth understanding: it was read off the demo's *module* model, while the
@@ -405,6 +439,9 @@ DetailView whose pivot-ness is platform code — both true, neither load-bearing
 declaration has been found.
 
 #### DASH-001: Project and render DashboardViews (ID: 1229)
+
+**Backlogged 2026-08-09 under [[ARCH-001]]** — a dashboard is never a first candidate when views are chosen
+by pain. Deprioritised, not refuted; NPO-001 genuinely unblocked it and that stands.
 
 **Premise checked 2026-08-09 — including a claim I made myself two iterations earlier, which was wrong.**
 

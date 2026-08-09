@@ -235,16 +235,30 @@ Link/Unlink rather than New/Delete._
 
 #### EXPORT-001: Export a list view to XLSX/PDF (ID: 1236)
 
-**Standard XAF list-view capability with no equivalent here.** Users expect to export the grid they are
-looking at, with its current filter, sort and grouping applied.
+**Premise corrected 2026-08-09 against dxdocs, before any code. The recommendation survives; the reason
+for it does not.**
 
-The decision this turns on is **who renders the file**: `DxGrid`'s own client-side export is simplest but in
-server mode only ever sees the **current page** (25 rows of 55k) — a wrong answer dressed as a feature, and
-it must not ship without saying so. A server-side export honours the whole filtered set, and MIG-002's
-boundary argument puts heavy rendering off the request path, i.e. enqueue through the JobServer like
-[[RPT-001]] and deliver an artifact. Recommend the server route for correctness; if the grid's own export
-is used at all, restrict it to in-memory-mode views where it is complete. Verify `DxGrid`'s export surface
-against dxdocs before deciding. Sizing: medium, cheaper if RPT-001 lands first.
+This card claimed `DxGrid`'s export "in server mode only ever sees the current page (25 rows of 55k) — a
+wrong answer dressed as a feature". **The documentation does not say that.** Nothing in the Blazor grid
+export topics describes truncation to the loaded page, and the TreeList equivalent states the opposite:
+*"Filter and export operations force the component to load all data."*
+
+**The real trade-off:** client-side export is *correct* but forces the whole set into the client — 55,000
+rows through the circuit for `Order`, which is exactly what FEAT-000's first standing decision forbids. The
+case for a server-side export is **cost and the platform's premise**, not correctness. Someone might
+reasonably decide 55k rows is fine for an occasional export, and they should decide on the true facts.
+
+**Unverified and load-bearing:** this platform binds through `GridCustomDataSource`, not
+`GridDevExtremeDataSource`. The documented limitations are written for the latter; export with a *custom*
+data source is not described. **Probe it before building** — export a server-mode view and count the rows.
+
+**Options:**
+1. **Server-side via the JobServer**, reusing RPT-001's proven pipeline (enqueue → artifact with
+   `RequestedBy` → poll → JS-interop download). Keeps data on the server; costs a job and an XLSX writer.
+2. **Grid client-side export** — simple, honest for in-memory views, pulls everything for server-mode ones.
+3. **Both**, switching on `GridBinding.UseServerMode`, the hybrid split GRID-002 already established.
+
+Recommendation: **(1)**, on the cost argument rather than the correctness one this card used to make.
 
 #### PIVOT-001: Project and render XAF PivotGrid (analysis) views (ID: 1227)
 

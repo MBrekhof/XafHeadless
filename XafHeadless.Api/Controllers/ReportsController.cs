@@ -1,4 +1,5 @@
 using DevExpress.ExpressApp;
+using DevExpress.ExpressApp.ReportsV2;   // IReportExportService
 using DevExpress.Persistent.BaseImpl.EF;   // ReportDataV2
 using Hangfire;
 using XafHeadless.JobServer.BusinessObjects;
@@ -28,6 +29,7 @@ namespace XafHeadless.Api.Controllers;
 public class ReportsController(
     IObjectSpaceFactory objectSpaceFactory,
     IServiceScopeFactory scopeFactory,
+    IReportExportService exportService,
     IBackgroundJobClient jobClient) : ControllerBase {
     public record ReportSummary(string Id, string Name);
     public record RunAccepted(Guid CorrelationId);
@@ -47,6 +49,61 @@ public class ReportsController(
         return Ok(reports);
     }
 
+    // A report's PARAMETERS, so a client can ask for them before running it.
+    //
+    // These are the report's OWN parameters (DevExpress.XtraReports.Parameters.Parameter), not XAF's
+    // ReportParametersObjectBase -- this module declares 27 of the former and none of the latter, and the
+    // report's own collection is the more universal mechanism anyway: it lives on the report, so it needs
+    // no companion XAF type to exist.
+    //
+    // Loading a report layout is NOT rendering it: no data fill, no Skia, no export. That is why this can
+    // sit in the API while the render stays in the worker -- MIG-002's boundary is about producing the
+    // document. The API already registers AddReports, so IReportExportService is available here.
+    //
+    // Hidden parameters are omitted: a report marks a parameter Visible=false when it is set by code or
+    // by a master report, and offering it in a form would invite a user to break the report.
+    [HttpGet("{reportId}/parameters")]
+    public IActionResult Parameters(string reportId) {
+        using var os = objectSpaceFactory.CreateObjectSpace<ReportDataV2>();
+        var reportData = os.GetObjects<ReportDataV2>()
+            .FirstOrDefault(r => r.PredefinedReportTypeName == reportId);
+        if (reportData is null) return NotFound();
+
+        using var report = exportService.LoadReport(reportData);
+        // OfType: ParameterCollection is a non-generic collection, so LINQ cannot infer the element type.
+        var parameters = report.Parameters
+            .OfType<DevExpress.XtraReports.Parameters.Parameter>()
+            .Where(p => p.Visible)
+            .Select(p => new ReportParameter(
+                p.Name,
+                string.IsNullOrWhiteSpace(p.Description) ? p.Name : p.Description.TrimEnd(':'),
+                HintFor(p.Type),
+                p.Value?.ToString()))
+            .ToList();
+        return Ok(parameters);
+    }
+
+    public record ReportParameter(string Name, string Caption, string Editor, string? DefaultValue);
+
+    // CLR type -> the same editor hints ViewMetadataProjector.ClassifyDataType emits, so the client can
+    // render a parameter form with the editors it already has rather than growing a second vocabulary.
+    // Deliberately a small mirror rather than a call into the projector: that one classifies an
+    // IMemberInfo (with lookups, collections and blobs to consider), and a report parameter is only ever
+    // a scalar.
+    static string HintFor(Type type) {
+        var t = Nullable.GetUnderlyingType(type) ?? type;
+        if (t.IsEnum) return "enum";
+        if (t == typeof(bool)) return "bool";
+        if (t == typeof(DateTime)) return "date";
+        if (t == typeof(DateOnly)) return "dateonly";
+        if (t == typeof(int) || t == typeof(long) || t == typeof(short)) return "int";
+        if (t == typeof(decimal) || t == typeof(double) || t == typeof(float)) return "decimal";
+        // Guid included on purpose: a Guid-typed parameter is a key the user pastes or a lookup fills in,
+        // and a text box is honest for it. Rendering it as a lookup would require knowing the target type,
+        // which the parameter does not carry (DynamicListLookUpSettings does, and is a later step).
+        return "string";
+    }
+
     // Enqueue a render. Returns 202 with a correlation id the caller polls -- the artifact's own primary
     // key does not exist until the job commits, so the API chooses the id up front.
     //
@@ -54,7 +111,8 @@ public class ReportsController(
     // which is the whole reason SVR-001 put it in a separate worker. This enqueues into the SAME shared
     // Hangfire storage the existing report job uses.
     [HttpPost("{reportId}/run")]
-    public IActionResult Run(string reportId, [FromQuery] string? criteria = null) {
+    public IActionResult Run(string reportId, [FromQuery] string? criteria = null,
+            [FromBody] Dictionary<string, string?>? parameters = null) {
         // Only reports this user can actually see may be run -- otherwise the catalogue's security trim
         // would be advisory, bypassable by anyone who knew an identifier.
         using var os = objectSpaceFactory.CreateObjectSpace<ReportDataV2>();
@@ -65,7 +123,7 @@ public class ReportsController(
         var correlationId = Guid.NewGuid();
         jobClient.Enqueue<JobExecutor<RenderReportCommand>>(executor =>
             executor.RunAsync(
-                new RenderReportCommand(reportId, criteria, RequesterName, correlationId),
+                new RenderReportCommand(reportId, criteria, RequesterName, correlationId, parameters),
                 CancellationToken.None));
         return Accepted(new RunAccepted(correlationId));
     }

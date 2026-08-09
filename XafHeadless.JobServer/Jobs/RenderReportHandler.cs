@@ -21,7 +21,8 @@ public sealed class RenderReportHandler(
     ILogger<RenderReportHandler> logger) : IJobHandler<RenderReportCommand> {
 
     public async Task ExecuteAsync(RenderReportCommand command, CancellationToken cancellationToken = default) {
-        var rendered = await renderer.RenderPdfAsync(command.ReportTypeName, command.Criteria, cancellationToken);
+        var rendered = await renderer.RenderPdfAsync(
+            command.ReportTypeName, command.Criteria, command.Parameters, cancellationToken);
 
         Guid artifactId;
         using (var os = objectSpaceFactory.CreateNonSecuredObjectSpace<ReportArtifact>()) {

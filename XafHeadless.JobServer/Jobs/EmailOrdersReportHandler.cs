@@ -30,7 +30,7 @@ public sealed class EmailOrdersReportHandler(
     const string OrdersReportType = "OutlookInspiredDemo.Module.Resources.Reports.ProductOrders";
 
     public async Task ExecuteAsync(EmailOrdersReportCommand command, CancellationToken cancellationToken = default) {
-        var rendered = await renderer.RenderPdfAsync(OrdersReportType, criteria: null, cancellationToken);
+        var rendered = await renderer.RenderPdfAsync(OrdersReportType, criteria: null, parameters: null, cancellationToken);
 
         Guid artifactId;
         using (var os = objectSpaceFactory.CreateNonSecuredObjectSpace<ReportArtifact>()) {

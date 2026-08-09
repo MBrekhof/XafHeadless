@@ -9,8 +9,13 @@ namespace XafHeadless.JobServer.Jobs;
 //
 // ReportTypeName is ReportDataV2.PredefinedReportTypeName, the stable resource-type name
 // ReportRenderService resolves -- not the primary key, whose GUID regenerates on every re-seed.
+// Parameters are the report's OWN parameters (DevExpress.XtraReports.Parameters.Parameter), carried as
+// strings because this record is serialised into Hangfire storage -- a dictionary of object would not
+// round-trip a Guid or a DateTime reliably through JSON. They are converted to each parameter's declared
+// CLR type at render time, where that type is known.
 public sealed record RenderReportCommand(
     string ReportTypeName,
     string? Criteria,
     string RequestedBy,
-    Guid CorrelationId);
+    Guid CorrelationId,
+    Dictionary<string, string?>? Parameters = null);

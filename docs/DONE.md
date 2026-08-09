@@ -1,5 +1,46 @@
 # XafHeadless — DONE
 
+#### RPT-001 (parameters, server side): Reports declare parameters and runs can supply them (ID: 1230)
+
+**Done 2026-08-09 — the API half. The client parameter form is still open.**
+
+**The card named the wrong mechanism, for the fifth premise correction this session.** It said to project a
+report's `ReportParametersObjectBase`. This module declares **none**. What its reports actually use is
+`DevExpress.XtraReports.Parameters.Parameter` — **27** of them — the report's *own* parameter collection.
+That is the better mechanism for a headless platform anyway: it lives on the report, so it needs no
+companion XAF type to exist, and it works for any XtraReport.
+
+**`GET api/reports/{id}/parameters`** projects each visible parameter as `{Name, Caption, Editor,
+DefaultValue}`. `Editor` reuses **the same hints `ClassifyDataType` emits**, so a client renders a parameter
+form with the editors it already has rather than growing a second vocabulary. Live: `ProductOrders` →
+`Product` (Guid → string) and `OrderDate` (date); `CustomerProfile` → none.
+
+Hidden parameters are omitted: a report marks one `Visible=false` when code or a master report sets it, and
+offering it in a form invites a user to break the report.
+
+**Loading a report layout is not rendering it** — no data fill, no Skia, no export — so this sits in the API
+while the render stays in the worker. The API already registered `AddReports`, so no new dependency.
+
+**Values are applied at render time**, converted to each parameter's declared CLR type. They travel as
+strings because the command round-trips through Hangfire's JSON storage, and only the renderer knows the
+declared type. Two deliberate behaviours: an **unknown parameter name is ignored** (a stale client must not
+be able to fail a render by naming a parameter the report no longer has), while a **value that will not
+convert fails the render loudly** — silently rendering with the default would hand back a report that
+quietly answers the wrong question.
+
+Both proven live in one pass: `{"OrderDate":"2023-04-05"}` → rendered, 57,051 bytes, collected 200 `%PDF-`;
+`{"OrderDate":"not-a-date"}` → the job **failed** with `FormatException`, no artifact. One completed, one
+failed, exactly as intended.
+
+**Honest limit:** this proves the parameter is accepted, converted and applied. It does **not** prove a
+given report's *output* changes — whether a report binds its parameter to anything is the report's own
+business, and the parameterised render came back the same size as the unparameterised one.
+
+Tests: `Api.Tests` 79/79, `Components.Tests` 113/113. Build 0 warnings.
+
+Files: `ReportsController.cs`, `ReportRenderService.cs`, `RenderReportCommand.cs`, `RenderReportHandler.cs`,
+`EmailOrdersReportHandler.cs`.
+
 #### RPT-001 (run button): Reporting works from the UI, end to end (ID: 1230)
 
 **Done 2026-08-09. RPT-001's core is now complete** — a user picks a report, clicks Run, and gets a PDF.

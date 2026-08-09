@@ -178,26 +178,27 @@ Recommendation: **option 2 now, option 1 only on explicit request.**
 
 #### RPT-001: Client-side reporting (ID: 1230)
 
-**Core DONE 2026-08-09 (`docs/DONE.md`): catalogue, run, collect, and the UI. Only report PARAMETERS
-remain.**
+**Catalogue, run, collect, the UI, and server-side PARAMETERS all DONE 2026-08-09 (`docs/DONE.md`). Only
+the client parameter FORM remains.**
 
-A user picks a report on `/reports`, clicks Run, and gets a PDF. The page enqueues a Hangfire job, polls
-(bounded — 60 x 1s, then a message saying the job may still finish rather than a spinner that turns
-forever), and streams the bytes to the browser. Rendering stays in the job server; the request path only
-enqueues and later serves stored bytes.
+**The card named the wrong parameter mechanism** — it said `ReportParametersObjectBase`, of which this
+module declares none. Its reports use `DevExpress.XtraReports.Parameters.Parameter` (27 of them), the
+report's own collection, which is the better fit anyway: it lives on the report and needs no companion XAF
+type.
 
-The download uses JS interop because the collect endpoint is Bearer-authenticated — a plain `<a href>`
-would send no Authorization header. Bytes are fetched in C# and handed over as a `DotNetStreamReference`.
-
-`ReportArtifact.RequestedBy` is a security boundary: reports render as a service user, so a PDF can contain
-rows the requester may not see. Own 200 / other user 403 / anonymous 401, all proven live.
+`GET api/reports/{id}/parameters` projects `{Name, Caption, Editor, DefaultValue}` with `Editor` reusing
+the hints `ClassifyDataType` already emits, so a form can be built from the existing editors. Values are
+supplied on the run and converted to each parameter's declared type: an unknown name is ignored (a stale
+client must not be able to fail a render), an unconvertible value fails the render loudly (silently using
+the default would answer the wrong question). Both proven live.
 
 **Still to do:**
-1. **Report parameters.** The renderer and run endpoint already accept a criteria string, so passing one is
-   plumbing. Projecting a report's `ReportParametersObjectBase` into a form is the real piece — verify the
-   `xaf-reporting` skill's `Visible=false` and `GetCriteria()` vs `FilterString` traps first.
-2. **Run for the current view/selection** — pass the grid's criteria through as the report criteria. Small
-   once (1) exists.
+1. **The client parameter form** — fetch `/parameters`, render with `EditorMap`, post the values with Run.
+   Reports with no parameters (several here) must keep running with one click.
+2. **Lookup-valued parameters** — `DynamicListLookUpSettings` carries the target type for parameters like
+   `ProductOrders.Product` (a Guid). Today those project as `string`, which is honest but crude; resolving
+   the settings would let LOOKUP-001's picker fill them in.
+3. **Run for the current view/selection** — pass the grid's criteria through as the report criteria.
 
 #### EDIT-002: Render DxHtmlPropertyEditor members safely (the XSS decision) (ID: 1241)
 

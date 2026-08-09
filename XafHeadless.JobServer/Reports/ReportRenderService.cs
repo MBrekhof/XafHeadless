@@ -50,7 +50,8 @@ public sealed class ReportRenderService(
     // it against the TENANT database -- which is exactly this child scope.
     const string ServiceUserName = "Admin@" + TenantName;
 
-    public Task<RenderedReport> RenderPdfAsync(string predefinedReportTypeName, string? criteria, CancellationToken ct) =>
+    public Task<RenderedReport> RenderPdfAsync(string predefinedReportTypeName, string? criteria,
+            Dictionary<string, string?>? parameters, CancellationToken ct) =>
         valueManagerStorageContext.RunWithStorageAsync(async () => {
             using var scope = scopeFactory.CreateScope();
             var sp = scope.ServiceProvider;
@@ -67,6 +68,14 @@ public sealed class ReportRenderService(
                 ?? throw new InvalidOperationException($"Report '{predefinedReportTypeName}' not found in ReportDataV2 (tenant '{TenantName}').");
 
             using var report = exportService.LoadReport(reportData);
+            // RPT-001: apply the report's OWN parameters before setup, converting each supplied string to
+            // the type the parameter declares -- the command carries strings because it round-trips through
+            // Hangfire's JSON storage, and only here is the declared type known. An unknown name is ignored
+            // rather than throwing: a stale client should not be able to fail a render by naming a
+            // parameter the report no longer has. A value that will not convert IS fatal, because
+            // silently rendering with the default would hand back a report that quietly answers the wrong
+            // question.
+            ApplyParameters(report, parameters);
             // Empty/whitespace criteria => no extra filter (the report's own FilterString still applies).
             exportService.SetupReport(report, string.IsNullOrWhiteSpace(criteria) ? null : criteria, sortProperties: null);
             using var stream = await exportService.ExportReportAsync(report, ExportTarget.Pdf);
@@ -75,6 +84,22 @@ public sealed class ReportRenderService(
             return new RenderedReport(ms.ToArray(),
                 string.IsNullOrWhiteSpace(reportData.DisplayName) ? predefinedReportTypeName : reportData.DisplayName);
         });
+
+    static void ApplyParameters(DevExpress.XtraReports.UI.XtraReport report,
+            Dictionary<string, string?>? parameters) {
+        if (parameters is null || parameters.Count == 0) return;
+        foreach (var (name, raw) in parameters) {
+            var parameter = report.Parameters
+                .OfType<DevExpress.XtraReports.Parameters.Parameter>()
+                .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+            if (parameter is null) continue;                 // stale client naming a removed parameter
+            if (string.IsNullOrWhiteSpace(raw)) continue;    // "leave the report's own default alone"
+            var target = Nullable.GetUnderlyingType(parameter.Type) ?? parameter.Type;
+            parameter.Value = target == typeof(Guid)
+                ? Guid.Parse(raw)                            // ChangeType cannot do Guid
+                : Convert.ChangeType(raw, target, System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
 
     // Authenticate the child scope's security strategy as the tenant admin so the report data-fill's
     // SecuredObjectSpaceFactory.EnsureLogon succeeds. Same mechanism as the companion implementation's job scope initializer.

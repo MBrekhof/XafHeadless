@@ -304,11 +304,14 @@ the only dashboards available is worse than not shipping it — the same reasoni
 
 #### NPO-001: Non-persistent (DomainComponent) types have no wire representation (ID: 1242)
 
-**Found 2026-08-09 while checking DASH-001, and it is why three separate features have dead-ended.**
+**Found 2026-08-09 while checking DASH-001, and it is why three separate features have dead-ended.
+Scoped against the demo module and 26.1 source the same day — the scope came down, see "What is actually
+open" below.**
 
 XAF apps routinely model computed/aggregate screens as **non-persistent** `[DomainComponent]` classes,
-populated in memory by an `ObjectsGetting` handler rather than stored in a table. This module has at least
-two — `Opportunity` and `QuoteAnalysis` — and neither has a `DbSet`.
+populated in memory by an `ObjectsGetting` handler rather than stored in a table. The demo module has
+**six** such classes; three carry population controllers — `Opportunity`, `QuoteAnalysis` and
+`QuoteMapItem` (the third was missed on the first pass). None has a `DbSet`.
 
 **This platform cannot serve them.** Data reaches the client over OData, and `options.BusinessObject<T>()`
 exposes EF entities; a type with no table cannot be queried that way. A view over a non-persistent type
@@ -319,12 +322,91 @@ any target app's summary/aggregate screens, which is where non-persistent object
 the honest alternative to inventing a chart contract ([[CHART-001]]) — an app wanting a computed screen
 already has an XAF-native way to declare one, and this platform simply cannot carry it.
 
-**Rough shape:** a read endpoint materialising the type through a `NonPersistentObjectSpace` (so the
-module's own `ObjectsGetting` handler populates it), returning projected rows, plus a client binding that
-routes such views there instead of OData. Read the `xaf-blazor-startup` skill first — it covers
-`ObjectsGetting`/`ObjectByKeyGetting` and the error-1021 trap — and verify against installed 26.1 source.
+**The goal is parity of outcome, not of mechanism** (README §Why). The line this repo holds is: do not
+re-implement model or security logic, and do not invent contracts the model does not declare. Reproducing
+XAF's *UI* mechanism was never part of it — so "stand up a server-side `Frame` + `ListView` to make app
+controllers activate" is the wrong shape, and was briefly considered and rejected here.
 
-Sizing: medium-to-large, and **read-only by nature** — a computed object has nowhere to save to.
+**The UI-free seam already exists.** `ObjectsGetting` is an event on `NonPersistentObjectSpace` — no Frame,
+no View, no controller required. `CreateCollection` (`NonPersistentObjectSpace.cs:121-149`, 26.1 source)
+raises it, takes whatever the handler returns wholesale, and `AcceptObject`s every element; a type with no
+subscriber falls through to `result = new BindingList<Object>()` (line 143) — **silently empty, not an
+error**, so a missed subscription looks exactly like an empty view.
+
+**The View coupling is redundant, not required.** All three demo handlers are `ObjectViewController<ListView,T>`
+and read `View.CollectionSource.Criteria`, which is what made this look UI-bound. But the collection source's
+criteria are already passed into the event (`ObjectsGettingEventArgs.Criteria`), and the demo proves it —
+`QuoteAnalysisListViewController.cs:25` uses `e.Criteria` in its *count* handler while the sibling
+`ObjectsGetting` handler reaches for `View` to obtain the same thing.
+
+**Row counts, measured against the module (not guessed):**
+
+- `Opportunity` — **exactly 4 rows, always**: `Enum.GetValues<Stage>()` minus `Summary`, each row one SQL
+  `SUM` over `Quote`. Bounded by an enum forever.
+- `QuoteAnalysis` — **one row per Quote, whole table** (`.ToArray()` then project). Generator seeds
+  `QuoteCount = 10000` (`DataGeneratorConsts.cs:16`; 30 under `EASYTEST`). Not observed — the local
+  `XafHeadlessDemo` and `OutlookInspiredDemo` databases both hold **0** `Quote` rows.
+- `QuoteMapItem` — one row per Quote in a stage band. Same shape as `QuoteAnalysis`.
+
+**Paging cannot be pushed into the handler, and does not need to be.** `ObjectsGettingEventArgs`
+(`EventArgs.cs:465-493`) carries `ObjectType`/`Criteria`/`Sorting`/`InTransaction` and **no skip/top**, so
+XAF itself always materialises the full filtered set and pages over it afterwards. XAF's own Blazor grid
+does exactly this for `QuoteAnalysis` today — so return-all is not a compromise this platform is making, it
+is the parity baseline. The bar is "no worse", not "better".
+
+**A row cap is model-declared, so capping invents nothing.** `IModelListView.TopReturnedObjects`
+(`Model/IModelListView.cs:115`) is XAF's own per-view limit, applied through
+`CollectionSourceBase.TopReturnedObjects:635` → `ApplyTopReturnedObjects` → `SetTopReturnedObjectsCount`.
+Nobody reads a ListView of 10,000 rows, and this repo already caps at two layers for exactly that reason:
+`XafListView.RowCap = 5000` with a server-mode fold above it (GRID-001), and `LookupController.cs:89`'s
+dxdocs-verified bounded fetch. Projecting `TopReturnedObjects` is new but it is model-read, not invention.
+**Caveat:** `BaseObjectSpace.SetTopReturnedObjectsCount` (`BaseObjectSpace.cs:1015-1023`) only bites on
+`XafDataView`/`DynamicCollectionBase`/`QueryableCollection`, and these handlers return plain arrays — so the
+endpoint trims *after* materialisation. That bounds the wire, not the app's memory. Bounding the fetch
+itself requires the handler to return a `DynamicCollection`, which does receive a top
+(`DynamicCollection.cs:494`) — an app-side option, not a platform one.
+
+**The decision this card turned on, and it was not paging.** The model declares the type and its views but
+says **nothing about how a non-persistent type is populated** — XAF's own answer to "who fills this" is a
+C# controller, not a model node. So model-is-the-contract has nothing to read here, and something must
+subscribe the population. That makes NPO-001 the **first feature that cannot be delivered zero-touch**;
+every feature so far has read the model and left the adopting app alone. Three ways out were weighed
+(2026-08-09):
+
+- **A — the app moves its subscription.** The module subscribes `ObjectsGetting` at ObjectSpace level
+  instead of from the ListView controller, and reads `e.Criteria`. One code path, both hosts. Cheapest to
+  build; costs every adopting app an edit to a module that is already in production.
+- **B — host-side registration (CHOSEN).** The app registers population in the Api host, alongside the
+  existing `options.BusinessObject<T>()` surface. The module, its controllers and the running Blazor app are
+  **untouched**; the change lives in headless-host startup, which an adopting app is writing anyway to adopt
+  this platform at all. Zero-touch survives intact for anything already deployed.
+- **C — do not support it.** Close this won't-do and [[DASH-001]] with it; non-persistent screens become the
+  views that stay in the Blazor app permanently. Defensible under strangler-fig, but forfeits every
+  summary/aggregate screen — which is exactly where non-persistent objects are most used.
+
+**Chosen: B** (owner, 2026-08-09). A is cheaper for this repo and worse for its consumers; C forfeits too
+much.
+
+**Consequence for the demo, which must not be glossed:** `OutlookInspired.Module` is a **read-only
+reference** (README §26; it lives in the DevExpress demos install). A real adopting app would extract its
+population body into a plain method and have both the controller and the host delegate call it — no
+duplication. **Here we cannot**, so the host registration must restate the population LINQ. That is ~10
+lines for `Opportunity` and is acceptable for a proof, but write it down as demo-only scaffolding, not the
+pattern being recommended.
+
+**This makes NPO-001 verifiable end-to-end, unlike the cards it blocks.** `Opportunity` is 4 rows of pure
+enum-plus-`SUM` and needs no seeded data to prove the path; [[DASH-001]] and [[SCHED-001]] were parked
+precisely because nothing here could exercise them. Prove the endpoint on `Opportunity` first, then
+`QuoteAnalysis` for the capped/large case.
+
+**Shape, revised:** a registration point on the Api host that binds a non-persistent type to a population
+delegate; a read endpoint that creates a `NonPersistentObjectSpace`, fires population, applies the view's
+`TopReturnedObjects` cap, and returns projected rows; plus a client binding that routes such views there
+instead of OData. Read the `xaf-blazor-startup` skill first — it covers `ObjectsGetting`/`ObjectByKeyGetting`
+and the error-1021 trap — and keep verifying against installed 26.1 source.
+
+Sizing: **medium** (was medium-to-large; the Frame/ListView fear is gone), and **read-only by nature** — a
+computed object has nowhere to save to.
 
 #### FILE-001: File attachment upload and download (ID: 1234)
 

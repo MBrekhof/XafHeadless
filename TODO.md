@@ -317,30 +317,54 @@ nothing about pivot needs inventing. It is unreachable purely because of which m
 (Charts are a different story and stay out regardless: `SettingTypeName` points at a Razor component holding
 the series definition — see [[CHART-001]].)
 
-**The decision to make.** Three shapes, and this card exists to choose between them rather than to presume
-one:
+**SPIKE RUN 2026-08-09 — and it invalidates this card's own premise. The blocker is NOT which model layer
+we merge.** Measured against the live host (temporary reflection probe on `api/diagnostics/model`, reverted
+after; the host was `QuoteAnalysis_ListView`):
 
-- **Keep PH2-003 as-is.** Anything a target app wants projected must be declared in a platform-agnostic
-  module. Honest and cheap, but it means the platform renders pivots only for apps that declare them our
-  way, not the way DevExpress's own demos do — and every adopting app has a migration to do before it sees
-  a pivot.
-- **Merge app-level diffs (PH2-003's own parked Phase-2).** The host references the app project's
-  `Model.xafml` and merges before projection. Unlocks pivot and dashboard against the real demos at once.
-  Cost and risk unknown and un-spiked: which layers, in what order, and what happens when a diff names a
-  platform type (`DxPivotGridListEditor`, `DxChartListEditor`) that the headless host cannot resolve — does
-  merging even survive an unresolvable `EditorTypeName`?
-- **Read the diffs without loading the module.** Parse the XAFML for the nodes that are platform-agnostic in
-  meaning (`PivotFieldArea`, `PivotSummaryType`) and ignore what is not. Possibly the cheapest useful
-  subset, and possibly a layering violation the model system will not tolerate.
+1. **No Blazor module is loaded.** `Application.Modules` contains no Blazor module of any kind. Expected,
+   but now measured rather than inferred.
+2. **Column nodes carry no pivot extension at all** — the probe returned an empty interface list for
+   `IModelColumn`. So `PivotFieldArea` / `PivotSummaryType` **do not exist as model properties in this
+   host**. They are declared on `IModelColumnPivotGridBlazor` and registered in exactly one place:
+   `SystemBlazorModule.ExtendModelInterfaces` (`DevExpress.ExpressApp.Blazor/SystemModule/Module.cs:232`,
+   26.1 source).
+3. **The platform-agnostic extensions ARE present**, courtesy of `ChartModule`/`PivotGridModule` which the
+   demo pulls in via `RequiredModuleTypes` (`Module.cs:38,43`): `IModelChartListView.ChartSettings` and
+   `IModelPivotListView.PivotSettings`.
+4. **But that agnostic node is an opaque blob.** `IPivotSettings` exposes `Settings:String`,
+   `LayoutSettings:String`, `ChartSettings:String` plus boolean totals/chart toggles — and **no** structured
+   field or area members. The pivot definition is a serialized XtraPivotGrid settings string.
 
-**Spike first, decide second.** The make-or-break unknown is whether an app-level or Blazor-module diff can
-be merged into a UI-less host's model at all when its `EditorTypeName` names a type the host cannot resolve.
-Answer that against the installed 26.1 source and one of the demo `Model.xafml` files before costing any of
-the three options. If it cannot be merged, option 2 dies and this card closes with a real platform limit
-written down — which is worth having either way.
+**What that means, and it is worse than this card assumed.** Merging the app-level `Model.xafml` would
+achieve nothing on its own: `PivotFieldArea="Row"` would arrive with no extender to land on and be
+discarded. The layer was never the binding constraint — **the model extenders are**.
 
-**Do not build any view until this is settled** — it decides whether [[PIVOT-001]] is authored in a
-host-owned module or read from the app layer, and those are different pieces of work.
+**It also kills the option this card called cheapest.** "Keep PH2-003, let apps declare pivots in a
+platform-agnostic module" is not available: XAF has no platform-agnostic *structured* pivot declaration. The
+only structured one is Blazor's. So declaring pivots "our way" would be **inventing a contract** — precisely
+what [[CHART-001]] refused to do. Pivot and chart are not as different as the previous entry claimed; pivot
+is projectable only if we can reach the Blazor model extension.
+
+**The real fork, and it is a genuine architecture decision:**
+
+- **Load `SystemBlazorModule` into the Api host.** That is the only route to the structured pivot model.
+  Note the assembly is *already* in the Api's output transitively (`DevExpress.ExpressApp.Blazor.v26.1.dll`),
+  so the package reference is not the barrier — **registering the module is**, and it brings controllers,
+  templates, list editors and `DataAccessModeHelper` registrations with it. That is the adapter tax the
+  README says this project exists to escape, re-entering through the model door. It may still be the right
+  call if it is inert without a `BlazorApplication`, which is unverified and is the next thing to measure.
+- **Accept that pivot is out**, on the same evidence and for the same reason as chart: the declaration this
+  platform would need is platform-specific. Cheapest, honest, and closes both cards for one stated reason
+  instead of two guessed ones.
+- **Parse the agnostic `Settings` blob.** Reverse-engineering a DevExpress serialization format. Named only
+  to be rejected — it is re-implementing model logic, brittle across versions, and the README's line.
+
+**Recommendation: measure one more thing before deciding** — whether `SystemBlazorModule` can be registered
+in a UI-less host without a `BlazorApplication`, and what it costs at startup. If it loads inert, option 1
+is viable and [[PIVOT-001]] becomes real. If it demands UI infrastructure, option 2 is the answer and both
+[[PIVOT-001]] and [[CHART-001]] close with a single, well-evidenced platform limit.
+
+**Do not build any view until this is settled.**
 
 #### PIVOT-001: Project and render XAF PivotGrid (analysis) views (ID: 1227)
 

@@ -178,32 +178,29 @@ Recommendation: **option 2 now, option 1 only on explicit request.**
 
 #### RPT-001: Client-side reporting (ID: 1230)
 
-**Catalogue half DONE 2026-08-09 (`docs/DONE.md`). The rest is open — and this card overstated what
-already existed.**
+**Catalogue, run and collect DONE 2026-08-09 (`docs/DONE.md`). Only the client Run button remains.**
 
-**Correction:** it claimed SVR-001 left "a dedicated download endpoint". It did not. `ReportArtifact`'s
-comment says a download endpoint *"is the only intended access path"* — **intended**. The JobServer calls
-`MapControllers()` and has **no controllers at all**, and the artifact is written and never read back.
+The chain runs end to end: `POST api/reports/{id}/run` → 202 + correlation id → the JobServer renders →
+`GET api/reports/runs/{correlationId}` → 200 + PDF (verified live: 57,051 bytes, `%PDF-`). A new
+`RenderReportCommand`/`RenderReportHandler` renders a *chosen* report with **no email step**, so unlike the
+existing job it has no SMTP dependency.
 
-What does exist is better than the card implied: `ReportRenderService.RenderPdfAsync(reportTypeName,
-criteria, ct)` is already **general**; only its one caller hardcodes a report and passes `criteria: null`.
+`ReportArtifact.RequestedBy` is a **security boundary**: reports are rendered by a service user, so a PDF
+can contain rows the requester may not see. Collect requires a match — own 200, other user 403, anonymous
+401, all proven live — and artifacts from the scheduled job (no requester) are downloadable by nobody.
 
-**Shipped:** `GET api/reports` (secured ObjectSpace, `{Id, Name}` where Id is the stable
-`PredefinedReportTypeName`) and a `/reports` page reachable from the nav menu. Live: 11 reports. The
-identifier column is load-bearing — two reports are both called "Profile".
+**Still to do:**
+1. **Client Run button + poll + download** on `/reports`. The page currently states plainly that running is
+   not wired up, which is true of the page, not of the API.
+2. **Parameters/criteria** — the renderer and the run endpoint already accept a criteria string; projecting
+   a report's `ReportParametersObjectBase` into a form is the larger piece, with the `xaf-reporting`
+   skill's `Visible=false` and `GetCriteria()` vs `FilterString` traps to verify first.
+3. **Run for the current view/selection** — pass the grid's criteria through as the report criteria.
 
-**Still to do, in order:**
-1. **Artifact download endpoint** — the piece this card wrongly assumed existed. Belongs in the JobServer,
-   which owns `ReportArtifact` (a shared BO in the host catalogue).
-2. **Parameterised run command** — enqueue a render for a *chosen* report id rather than the hardcoded one.
-   The dispatch path already works (`ExecuteCommandAsync` drives "Run Now" today).
-3. **Poll + download in the client**, and a Run button on the reports page.
-4. **Parameters/criteria** — the renderer already accepts a criteria string; projecting a report's
-   `ReportParametersObjectBase` into a form is the larger, later piece, with the `xaf-reporting` skill's
-   `Visible=false` and `GetCriteria()` vs `FilterString` traps to verify first.
-
-Rendering must **not** move onto the API request path to shortcut this — Skia and CPU cost are exactly why
-SVR-001 put it in a separate service.
+Note for anyone touching host-shared BOs from the API: read through a **fresh DI scope**
+(`PrefsController.HostObjectSpace`'s pattern). The request scope fails two different silent ways — the
+non-secured factory hits the tenant context where the type is unregistered, and the secured factory returns
+FalseCriteria (zero rows, no error).
 
 #### EDIT-002: Render DxHtmlPropertyEditor members safely (the XSS decision) (ID: 1241)
 

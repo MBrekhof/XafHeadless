@@ -152,6 +152,10 @@ public class Startup {
         services.AddTransient<IJobDispatcher, HangfireJobDispatcher>();
         services.AddTransient<IJobHandler<EmailOrdersReportCommand>, EmailOrdersReportHandler>();
         services.AddTransient<JobExecutor<EmailOrdersReportCommand>>();
+        // RPT-001: render a chosen report for its requester to collect. No email step, so it has no SMTP
+        // dependency -- unlike the job above, it runs in environments with no mail server.
+        services.AddTransient<IJobHandler<RenderReportCommand>, RenderReportHandler>();
+        services.AddTransient<JobExecutor<RenderReportCommand>>();
         services.AddScoped<IJobExecutionRecorder, XafJobExecutionRecorder>();
         services.AddScoped<IJobScopeInitializer, NoOpJobScopeInitializer>();
         services.AddTransient<IJobProgressReporter, NullJobProgressReporter>();

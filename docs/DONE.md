@@ -1,5 +1,52 @@
 # XafHeadless — DONE
 
+#### RPT-001 (run + collect): A chosen report is rendered and served back to whoever asked (ID: 1230)
+
+**Done 2026-08-09.** The chain now runs end to end: `POST api/reports/{id}/run` → 202 + a correlation id →
+the JobServer renders → `GET api/reports/runs/{correlationId}` → 200 + PDF. Verified live: **57,051 bytes
+beginning `%PDF-`**.
+
+**Pieces.** A new `RenderReportCommand`/`RenderReportHandler` in the JobServer renders a *chosen* report
+and stores the artifact — no email step, unlike the existing job, so it has **no SMTP dependency** and runs
+where the email job cannot. `ReportArtifact` gains `RequestedBy` and `CorrelationId`. The API enqueues into
+the same shared Hangfire storage the existing job uses, and chooses the correlation id up front because the
+artifact's own key does not exist until the job commits.
+
+**`RequestedBy` is a security boundary, not bookkeeping.** A report is rendered by a **service user** —
+`ReportRenderService` logs on the tenant admin because the data-fill requires an authenticated context — so
+its PDF can contain rows the requesting user may not see. Serving artifacts to any authenticated caller
+would hand out data past the security trim. Collect therefore requires a match, which also means artifacts
+from the **scheduled** job (no requester) are downloadable by nobody: deny by default. Proven live:
+own → **200**, a different user → **403**, anonymous → **401**. Running is gated on the same
+security-trimmed catalogue read, so knowing an identifier is not enough to render something you cannot see.
+
+**Two wrong object-space attempts before reading what the repo already documented**, worth recording
+because both failed *silently* in different ways:
+- the **non-secured** factory on the request scope routes to the **tenant** context, where a host-shared
+  type is not registered at all → *"type is not registered within the business model"*;
+- the **secured** factory reaches the host but under `MultiTenantReadOnlySelectDataSecurity`, which answers
+  **FalseCriteria** → zero rows, no error. The job demonstrably wrote the artifact and collect still
+  returned 202 forever.
+
+`PrefsController` had already written this up for its own host-shared BO, including the fix: read through a
+**fresh DI scope**, where `ITenantProvider` (scoped) starts with `TenantId == null` → host context. The
+answer was in the repo before I started guessing.
+
+**Rendering stayed off the API request path**, as MIG-002 requires — the API only enqueues and later serves
+stored bytes.
+
+Tests: `Api.Tests` **79/79** (+4 — catalogue shape, unknown report rejected, unfinished run reports pending
+rather than erroring, and the whole surface refusing anonymous callers). These deliberately do **not**
+require a running JobServer; the round trip and the cross-user 403 were verified live and are recorded here
+rather than pinned by a test that would fail whenever the worker is down. `Components.Tests` 113/113.
+Build 0 warnings.
+
+**Still open:** the client Run button and download — the endpoints exist and are proven, but the `/reports`
+page still says running is not wired up, because it is not wired up *there* yet.
+
+Files: `ReportsController.cs`, `ReportArtifact.cs`, `RenderReportCommand.cs` (new),
+`RenderReportHandler.cs` (new), `JobServer/Startup.cs`, `Api/Startup.cs`, `ReportsTests.cs` (new).
+
 #### RPT-001 (catalogue half): The report catalogue reaches the client (ID: 1230)
 
 **Done 2026-08-09 — the catalogue only. Running a report is still open on the card.**

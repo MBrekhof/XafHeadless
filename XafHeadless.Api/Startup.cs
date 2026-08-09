@@ -59,9 +59,14 @@ public class Startup {
         // and its LookupProbe_DetailView are present there and absent in Production.
         // SVR-001 Task 2.2: JobDefinition/JobExecutionRecord are host-owned shared BOs defined in
         // XafHeadless.JobServer; they ride the same .WithSharedBusinessObjects path as UserLayoutPref.
+        // RPT-001 adds ReportArtifact: the API serves a rendered report back to the user who asked for it,
+        // which is a cheap read of stored bytes, not a render -- MIG-002's "heavy rendering off the request
+        // path" boundary is about producing the PDF, and that stays in the JobServer. Reading it here keeps
+        // the client talking to ONE host with ONE token instead of giving the worker an HTTP surface.
+        // It remains deliberately NOT OData-exposed (see the BusinessObject<T> list below).
         Type[] sharedBusinessObjects = Environment.IsDevelopment()
-            ? [typeof(TaxRate), typeof(UserLayoutPref), typeof(LookupProbe), typeof(JobDefinition), typeof(JobExecutionRecord)]
-            : [typeof(TaxRate), typeof(UserLayoutPref), typeof(JobDefinition), typeof(JobExecutionRecord)];
+            ? [typeof(TaxRate), typeof(UserLayoutPref), typeof(LookupProbe), typeof(JobDefinition), typeof(JobExecutionRecord), typeof(ReportArtifact)]
+            : [typeof(TaxRate), typeof(UserLayoutPref), typeof(JobDefinition), typeof(JobExecutionRecord), typeof(ReportArtifact)];
         services.AddHttpContextAccessor();
         // The Blazor Web App (localhost:5220) is the browser consumer of this host.
         services.AddCors(o => o.AddDefaultPolicy(p => p

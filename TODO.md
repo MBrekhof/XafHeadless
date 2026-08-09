@@ -176,29 +176,34 @@ So a metadata-driven projector has nothing to project. This is the first concret
 
 Recommendation: **option 2 now, option 1 only on explicit request.**
 
-#### RPT-001: Client-side reporting — list, parameterize, preview and download reports (ID: 1230)
+#### RPT-001: Client-side reporting (ID: 1230)
 
-**Half of this already ships — the half nobody can reach from the UI.** SVR-001 built real rendering in the
-JobServer: `ReportRenderService` uses XAF's `IReportExportService` to render a stored `ReportDataV2` layout
-to PDF, `ReportArtifact` stores the bytes, and a dedicated download endpoint exists. But it is driven only
-by a background job (`EmailOrdersReportCommand`) rendering **exactly one hard-coded report** (`OrdersReport`,
-PDF, `criteria: null`). The client has no reporting UI at all.
+**Catalogue half DONE 2026-08-09 (`docs/DONE.md`). The rest is open — and this card overstated what
+already existed.**
 
-Missing: **list the available reports** (project the `ReportDataV2` catalogue as metadata); **parameters +
-criteria** (reuse the DetailView editor machinery for a parameter form — note the `xaf-reporting` traps,
-the parameter object's `Visible=false` gotcha and `GetCriteria()` vs `FilterString`, to be verified against
-dxdocs, not memory); **run + deliver** via the existing Hangfire dispatch, since SVR-001's boundary decision
-was explicit that report rendering must not run inline on the API request path; and **run a report for the
-current view/selection**, passing the grid's criteria through.
+**Correction:** it claimed SVR-001 left "a dedicated download endpoint". It did not. `ReportArtifact`'s
+comment says a download endpoint *"is the only intended access path"* — **intended**. The JobServer calls
+`MapControllers()` and has **no controllers at all**, and the artifact is written and never read back.
 
-**Do not re-implement rendering** — service, artifact storage and download path exist and are proven. High
-value: makes shipped-but-unreachable capability usable. Sizing: medium.
+What does exist is better than the card implied: `ReportRenderService.RenderPdfAsync(reportTypeName,
+criteria, ct)` is already **general**; only its one caller hardcodes a report and passes `criteria: null`.
 
-_EDIT-001 (editor inventory + honouring the DECLARED editor: the projector read only the CLR type and
-silently discarded all 19 `[EditorAlias]` declarations; the alias is now projected additively, the client
-prefers it and falls back to the CLR hint rather than to a badge, and HyperLink + ProgressBar editors
-ship) done 2026-08-09 — see `docs/DONE.md`. `DxHtmlPropertyEditor` deliberately NOT implemented (XSS) —
-that is [[EDIT-002]] below._
+**Shipped:** `GET api/reports` (secured ObjectSpace, `{Id, Name}` where Id is the stable
+`PredefinedReportTypeName`) and a `/reports` page reachable from the nav menu. Live: 11 reports. The
+identifier column is load-bearing — two reports are both called "Profile".
+
+**Still to do, in order:**
+1. **Artifact download endpoint** — the piece this card wrongly assumed existed. Belongs in the JobServer,
+   which owns `ReportArtifact` (a shared BO in the host catalogue).
+2. **Parameterised run command** — enqueue a render for a *chosen* report id rather than the hardcoded one.
+   The dispatch path already works (`ExecuteCommandAsync` drives "Run Now" today).
+3. **Poll + download in the client**, and a Run button on the reports page.
+4. **Parameters/criteria** — the renderer already accepts a criteria string; projecting a report's
+   `ReportParametersObjectBase` into a form is the larger, later piece, with the `xaf-reporting` skill's
+   `Visible=false` and `GetCriteria()` vs `FilterString` traps to verify first.
+
+Rendering must **not** move onto the API request path to shortcut this — Skia and CPU cost are exactly why
+SVR-001 put it in a separate service.
 
 #### EDIT-002: Render DxHtmlPropertyEditor members safely (the XSS decision) (ID: 1241)
 

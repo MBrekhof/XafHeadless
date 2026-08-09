@@ -1,0 +1,55 @@
+@page "/reports"
+@using XafHeadless.Components.Contracts
+@inject ApiClient Api
+
+<PageTitle>Reports</PageTitle>
+
+@* RPT-001: the report catalogue. SVR-001 built real PDF rendering in the JobServer and nothing could
+   reach it -- there was no way to see which reports exist, the only caller hardcoded one report name, and
+   the rendered artifact was write-only. This is the first half: what is available.
+
+   Running a report is NOT here yet, deliberately. Rendering is CPU- and native-dependency-heavy (Skia), so
+   MIG-002's boundary decision keeps it off the API request path -- it has to enqueue to the JobServer and
+   be collected as an artifact, which needs two endpoints that do not exist yet. Listing what is available
+   is honest on its own; a Run button that did the render inline would not be. *@
+<AuthGuard>
+    <div class="xaf-detail">
+        <h3 class="mb-3">Reports</h3>
+
+        @if (loading) {
+            <em>Loading…</em>
+        } else if (reports.Length == 0) {
+            <p class="text-muted">No reports are available to you.</p>
+        } else {
+            <table class="table">
+                <thead>
+                    <tr><th>Report</th><th>Identifier</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var report in reports) {
+                        <tr>
+                            <td>@report.Name</td>
+                            @* The stable resource-type name the renderer resolves; shown because two
+                               reports in this catalogue share the display name "Profile" and the id is
+                               the only thing that tells them apart. *@
+                            <td class="text-muted small">@report.Id</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="text-muted small">
+                Running a report is not wired up yet — rendering happens in the job server, off the request path.
+            </p>
+        }
+    </div>
+</AuthGuard>
+
+@code {
+    ReportSummary[] reports = [];
+    bool loading = true;
+
+    protected override async Task OnInitializedAsync() {
+        reports = await Api.GetReportsAsync();
+        loading = false;
+    }
+}

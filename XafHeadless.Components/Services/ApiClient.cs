@@ -81,6 +81,19 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return buckets.EnumerateArray().Select(e => e.Clone()).ToArray();
     }
 
+    // RPT-001: the report catalogue -- which reports this app has. Degrades to empty rather than throwing:
+    // a reporting menu that cannot load its list should show nothing, not take the page down.
+    public async Task<ReportSummary[]> GetReportsAsync() {
+        ApplyAuthHeader();
+        var response = await http.GetAsync("api/reports");
+        if (CheckUnauthorized(response)) return [];
+        if (!response.IsSuccessStatusCode) {
+            LogDegraded(response, "report catalogue not loaded");
+            return [];
+        }
+        return await response.Content.ReadFromJsonAsync<ReportSummary[]>() ?? [];
+    }
+
     // CRUD-002: removes an object through the same validating write path as save/create (never OData
     // DELETE, which ODataReadOnlyMiddleware blocks host-wide). Returns whether it actually happened -- the
     // caller refreshes a grid on the strength of this, and a refused delete that reported success would

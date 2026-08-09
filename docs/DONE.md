@@ -1,5 +1,45 @@
 # XafHeadless — DONE
 
+#### RPT-001 (catalogue half): The report catalogue reaches the client (ID: 1230)
+
+**Done 2026-08-09 — the catalogue only. Running a report is still open on the card.**
+
+**The card was wrong about what already existed, and that is worth recording.** It claimed SVR-001 left "a
+dedicated download endpoint" for rendered reports. It did not. `ReportArtifact`'s comment says a download
+endpoint *"is the only intended access path"* — **intended**, a design note. The JobServer calls
+`MapControllers()` and has **no controllers at all**; `ReportArtifact` is written by the job handler and
+never read back. That is the fourth card premise this session that turned out to be prose read as fact,
+and the third written by me.
+
+**What does exist** is better than the card implied: `ReportRenderService.RenderPdfAsync(reportTypeName,
+criteria, ct)` is already **general** — it takes a report identifier and an optional criteria. Only its one
+caller hardcodes a report and passes `criteria: null`. The renderer was never the gap; reaching it was.
+
+**Shipped: `GET api/reports`**, listing `{Id, Name}` through a **secured** ObjectSpace, so a user who cannot
+see the catalogue is not handed one. `Id` is `PredefinedReportTypeName` — matching what the renderer
+resolves, and for the reason its own comment gives: this host's tenant DB is a disposable dev catalogue
+whose `ReportDataV2` GUIDs regenerate on every re-seed, so the primary key would rot while the
+resource-type name is stable. Live: **11 reports**.
+
+Client: a `/reports` page, reachable from the nav menu — appended client-side, since it is an app page
+rather than a projected model view. The identifier column is not decoration: two reports in this catalogue
+are both called **"Profile"**, and the id is the only thing telling them apart. The page says plainly that
+running is not wired up, rather than showing a button that does nothing.
+
+**In the API, not the JobServer, deliberately:** a catalogue is a cheap read of tenant data the API already
+serves. Listing reports is not rendering them, so MIG-002's boundary decision does not apply — and the
+E2E reaches the page through the menu rather than by URL, because a page nothing links to is not shipped.
+
+**Not done, and not faked:** the artifact download endpoint (the piece the card assumed existed), a
+parameterised run command, and client polling. Rendering must not move onto the API request path to
+shortcut them — Skia and CPU cost are exactly why SVR-001 put it in a separate service.
+
+Tests: `Api.Tests` 75/75, `Components.Tests` 113/113, E2E **16/17** (+1; the failure is `JobServerE2ETests`
+needing smtp4dev). Build 0 warnings.
+
+Files: `ReportsController.cs` (new), `ApiClient.cs`, `Contracts/ReportSummary.cs` (new),
+`Pages/Reports.razor` (new), `Layout/NavMenu.razor`, `ReportCatalogueE2ETests.cs` (new).
+
 #### CRUD-002 (new half): Creating a child from its master's nested grid (ID: 1235)
 
 **Done 2026-08-09. With the delete half below, CRUD-002 is complete.**

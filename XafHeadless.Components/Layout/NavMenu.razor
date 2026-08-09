@@ -16,6 +16,10 @@
         @foreach (var item in items) {
             <NavLink href="@($"/list/{item.ViewId}")" class="d-block px-2 py-1" Match="NavLinkMatch.All">@item.Caption</NavLink>
         }
+        @* RPT-001: Reports is a client-side page, not a projected model view, so it is appended here
+           rather than coming from api/model/navigation. It sits after the projected items so the menu
+           still reads as "the model's views, then this app's own pages". *@
+        <NavLink href="/reports" class="d-block px-2 py-1" Match="NavLinkMatch.All">Reports</NavLink>
     </nav>
 }
 

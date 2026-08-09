@@ -32,8 +32,21 @@ XAF's Blazor **UI** stack carries a heavy adapter tax — component-model mirror
 sync-over-async, one `XafApplication` per circuit. But XAF's crown jewels are UI-framework-free. Put them
 behind a Web API, project the model as data, and any HTTP client (Blazor WASM/Server, MAUI, React) renders
 real XAF views: **async end-to-end, every render mode, no circuit-held application state.** An existing XAF
-Blazor Server app keeps running off the same module — you adopt this **view by view (a strangler fig), not as
-a rewrite.**
+Blazor Server app keeps running off the same module — you adopt this **view by view, not as a rewrite.**
+
+**This is a growth path, not a replacement** (`ARCH-001`, `docs/DONE.md`). Nothing here argues for retiring a
+working XAF Blazor Server app. Adopt it for the views that actually *hurt* — server load, circuit-bound
+interaction latency, or a client XAF cannot be — and leave the rest in XAF. Each projected view is
+independently reversible: if it doesn't work headless, it stays where it is and nothing is stranded. That
+also happens to be the cheap path, because views chosen by pain are overwhelmingly read-heavy list/search/
+report screens, which is exactly where projection is nearly free (see **What it costs** below).
+
+**Be precise about performance.** For a single request this adds a hop — client → API → DB — where Blazor
+Server goes circuit → DB. The wins are elsewhere and they are real: **interaction latency** (in XAF Blazor
+Server every sort/filter/group is a circuit round-trip; under the capped in-memory bind they happen in the
+browser), **server load and scale** (circuits hold per-user state, a stateless API does not, and a WASM
+client moves rendering off the server entirely), and **heavy work off the request path**. It offloads the
+server and makes heavy grids feel local; it does not make the same page render faster.
 
 ## Quickstart
 
@@ -118,7 +131,8 @@ per-view client code**.
 | **Navigation** | A model-projected, security-trimmed menu (`GET api/model/navigation`); post-login lands on the model's first nav item. |
 | **Auth** | JWT persists across a hard reload and the InteractiveAuto **Server↔WebAssembly render-mode takeover** (sessionStorage), proven by a dual-phase E2E. |
 | **Per-user layout prefs** | `GET/PUT api/prefs/{viewId}` stores per-user DxGrid column state (order/width), keyed strictly to the authenticated identity. |
-| **Commands** | Server-side XAF logic crosses the wire as commands. |
+| **Non-persistent types** | `GET api/nonpersistent/{type}` serves computed/aggregate `[DomainComponent]` types — the ones with **no `DbSet`**, which OData cannot serve at any URL. The host registers how each is populated; `ObjectsGetting` then runs against a `NonPersistentObjectSpace` whose additional (secured) ObjectSpaces are attached, so aggregates are permission-trimmed by XAF. Same response envelope as OData, so the whole grid binding is reused. **Read-only by nature** (a computed object has nowhere to save to) and capped by the model's own `IModelListView.TopReturnedObjects`, with the true total still reported so the grid says "first N of M" rather than presenting a truncated set as complete. |
+| **Commands** | Server-side XAF logic crosses the wire as named commands (`IHeadlessCommand` → `POST api/commands/{id}`), executed against a **secured** ObjectSpace — same posture as the OData/save paths, no bypass. This is also the answer to the actions gap below: an action's *declaration* is model-declared and projectable, its *effect* is re-expressed here. Better as an API than remoting "execute action X on view Y" would have been — and the cost is per action, forever. |
 | **Background jobs** | A separate UI-less **Hangfire** worker host (`XafHeadless.JobServer`, `:5300`) runs work off the request path so long/heavy jobs never block a request or die with the API. `JobDefinition`-driven **cron**, an admin-gated write path for the shared job config, a **"Run Now"** button, and one end-to-end job — `EmailOrdersReport` renders the demo's Orders report to a PDF in a **tenant-isolated child scope** and emails it (MailKit), enqueued from the Api via `POST api/commands/EmailOrdersReport` into shared Hangfire SQL. `JobDefinition`/`JobExecutionRecord` get full CRUD through the same generic client (one server-side OData convention makes host-shared BOs read correctly — see finding 6). |
 
 Its central design property: **nothing in the projection or rendering path is view-specific.** Expose a
@@ -149,9 +163,34 @@ This is a working seed, not a toy — but it's a *seed*. If you're weighing it f
 - **Solid:** security trimming, the validating save contract, the guarded OData write surface, multi-tenancy,
   and render-mode freedom are all enforced and tested, not aspirational.
 - **Plan for:** host-owned entities need EF Core **migrations** in a non-disposable deployment (the dev host
-  catalog is created/recreated wholesale); lookup **editors** are display-only today (reference *writes* work
-  at the API); app-level `Model.xafml` customizations are out of scope by decision — **module-level model is
-  the contract** (put customizations in a module). See [`TODO.md`](TODO.md) for the current, honest backlog.
+  catalog is created/recreated wholesale); app-level `Model.xafml` customizations are out of scope by
+  decision — **module-level model is the contract** (put customizations in a module; note `MODEL-001` found
+  this costs more than assumed, because all three DevExpress demos declare charts/pivots/dashboards at *app*
+  level). See [`TODO.md`](TODO.md) for the current, honest backlog.
+
+### What it costs — read this before scoping
+
+The platform projects what the model **declares**. XAF's model describes **structure** exhaustively,
+describes **behaviour** only down to its label, and delegates **platform rendering** to platform code. So:
+
+- **Behaviour is not inherited.** The projector emits an **empty action list for every view**. An action's
+  declaration is in the model (`<ActionDesign><Action Id="…" …>`), so the button and its enablement project
+  — but the effect is re-implemented as a command, per action. When the Blazor app gains an action, the
+  headless surface silently does not.
+- **Some actions have no headless equivalent at all.** `PopupWindowShowAction` — open a dialog, collect
+  input, act on the result — is a UI flow bound to `View`/`Frame`/`ShowViewStrategy`. You redesign the
+  interaction; you don't port it.
+- **Charts, pivots, dashboards and schedulers are out of scope.** A Blazor chart's series live in a Razor
+  component named by `SettingTypeName` — there is no model text to read. A pivot *is* model-declared, but
+  only through a Blazor-only model extension (`MODEL-001` proved that extension can be registered in this
+  host inert, if it's ever wanted).
+
+**The one question that decides the bill for your app:** *does the ViewController **contain** the business
+logic, or does it just **trigger a service**?* If it triggers a service, each headless command is ~10 lines
+calling that same service — one implementation, two front doors, no drift. If the logic lives inside the
+controller, every action means extracting it first, which is the rewrite metered out. Two apps on the same
+stack can land on opposite sides of this, and the answer is visible from the code without doing any
+migration work.
 
 ## Findings every XAF dev should know (even if you never go headless)
 

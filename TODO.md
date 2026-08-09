@@ -185,16 +185,40 @@ of it **platform-specific UI code**, none of it declared in the application mode
 So a metadata-driven projector has nothing to project. This is the first concrete instance of MIG-002's
 "complex ViewController behaviors … need bespoke client UI or don't cross the wire".
 
+**Conclusion CONFIRMED and its reason replaced, 2026-08-09.** The conclusion above survives; the reasoning
+under it was incomplete, because it was read off the *module* model while charts are declared in the *app*
+model. Chart views do exist and they ARE declared — the reason they remain unprojectable is sharper than
+"nothing is declared", and it is this:
+
+    <ListView Id="Opportunity_ListView" EditorTypeName="…Blazor.Editors.DxChartListEditor"
+              ChartType="DxPieChart" SettingTypeName="…Blazor.Server.Charts.OpportunityPieChart" />
+
+The model declares **that** a view is a pie chart and **which type configures it**. It does not declare the
+chart. `SettingTypeName` names a **Razor component**, and that component holds the whole definition —
+FeatureCenter's equivalent is `ArgumentField="(Order x) => x.Customer.Country"`,
+`ValueField="… x.Freight"`, `SummaryMethod="Enumerable.Sum"` (`FeatureCenter.Module.Blazor/Charts/
+OrderSalesByCountryChart.razor`). Series, fields and aggregation are Blazor markup in an assembly a
+headless host cannot reference.
+
+**So inventing a chart contract really would be invention** — there is no model text to read, unlike
+[[PIVOT-001]], where `PivotFieldArea`/`PivotSummaryType` sit on ordinary `ColumnInfo` nodes. That asymmetry
+is the finding: pivot is projectable, chart is not, and they should stop being treated as one problem.
+[[MODEL-001]] does not rescue this card — it changes which model layers are read, and no layer contains
+the series definition.
+
 **Three options, and the choice is the owner's:**
 1. **Declare our own chart contract** — small metadata (series member, argument member, aggregate, criteria)
    an app opts into, rendered with `DxChart` over the wire-proven `$apply` path. Useful, but it is a
    platform feature we invent, NOT an XAF model projection — a departure from "the module's model is the
-   contract" that every other feature here has honoured.
-2. **Do [[DASH-001]] instead.** Cheaper, faithful to the model, and it has real demand: two DashboardViews
-   (`Welcome`, `Opportunities`) exist, composed of ordinary ListViews the platform already renders.
-3. **Drop it** until a target app has a model-declared chart.
+   contract" that every other feature here has honoured. Now known to be the ONLY route, not one of several.
+2. ~~**Do [[DASH-001]] instead.**~~ Withdrawn — that recommendation was made on a wrong reading of the
+   dashboards (see FEAT-000). DASH-001 is now unblocked on its own merits by NPO-001, not as a chart
+   substitute.
+3. **Drop it** until a target app has a model-declared chart — noting that on this evidence a Blazor XAF app
+   never will, because the platform's own mechanism puts the definition in a Razor component.
 
-Recommendation: **option 2 now, option 1 only on explicit request.**
+Recommendation: **option 3 by default, option 1 only on explicit request.** Do not spend [[MODEL-001]]'s
+outcome on this card; spend it on [[PIVOT-001]].
 
 _RPT-001 (client-side reporting: catalogue, run, collect, download, and a parameter form that reuses
 the DetailView editors) **done 2026-08-09** — see `docs/DONE.md`. Two nice-to-haves were left
@@ -260,21 +284,101 @@ data source is not described. **Probe it before building** — export a server-m
 
 Recommendation: **(1)**, on the cost argument rather than the correctness one this card used to make.
 
+#### MODEL-001: Reconsider PH2-003 — should the host read app-level (and platform-module) model diffs? (ID: 1245)
+
+**Reopens the question PH2-003 (539) closed on 2026-07-12, because evidence found on 2026-08-09 changes what
+that decision costs.**
+
+PH2-003 decided: *module-level model IS the platform contract; app-level `Model.xafml` customizations are
+invisible to the headless host, and that is deliberate. Apps wanting customizations honored should put them
+in a module.* It explicitly parked the alternative as a possible Phase-2 feature: *"host references the app
+project's `Model.xafml`, merges its diffs before projection"*.
+
+At the time that looked cheap. It is not, and here is the evidence.
+
+**Every chart, pivot and dashboard declaration in every DevExpress XAF demo lives in a layer this host
+deliberately does not read.** Verified 2026-08-09 across the installed 26.1 demos:
+
+- `OutlookInspiredDemo.Blazor.Server/Model.xafml` — `Opportunity_ListView` as `DxChartListEditor`,
+  `QuoteAnalysis_ListView` as `DxPivotGridListEditor`, plus two more chart views. **App level.**
+- `MainDemo.Blazor.Server/Model.xafml` — the `PaycheckChart` DashboardViewItem and three `EditorType`
+  overrides. **App level.** `MainDemo.Module/Model.DesignedDiffs.xafml` contains **zero** chart/pivot/
+  dashboard nodes — checked, not assumed.
+- `FeatureCenter.Module.Blazor/Model.DesignedDiffs.xafml` — three chart ListViews. Module level, but a
+  **platform-specific (Blazor) module**, which a headless host cannot load either.
+
+So "put them in a module" is advice no DevExpress demo follows, and for charts/pivots the natural home is
+either the app project or a platform-specific module. Both are outside the contract as it stands.
+
+**What this costs concretely.** It is the sole remaining blocker on [[PIVOT-001]], and the reason
+[[DASH-001]] could not be verified against the demos. A pivot is *fully* model-declared — `EditorTypeName`
+plus `PivotFieldArea`/`PivotSummaryType` on the ordinary `ColumnInfo` nodes the projector already walks — so
+nothing about pivot needs inventing. It is unreachable purely because of which model layer this host merges.
+(Charts are a different story and stay out regardless: `SettingTypeName` points at a Razor component holding
+the series definition — see [[CHART-001]].)
+
+**The decision to make.** Three shapes, and this card exists to choose between them rather than to presume
+one:
+
+- **Keep PH2-003 as-is.** Anything a target app wants projected must be declared in a platform-agnostic
+  module. Honest and cheap, but it means the platform renders pivots only for apps that declare them our
+  way, not the way DevExpress's own demos do — and every adopting app has a migration to do before it sees
+  a pivot.
+- **Merge app-level diffs (PH2-003's own parked Phase-2).** The host references the app project's
+  `Model.xafml` and merges before projection. Unlocks pivot and dashboard against the real demos at once.
+  Cost and risk unknown and un-spiked: which layers, in what order, and what happens when a diff names a
+  platform type (`DxPivotGridListEditor`, `DxChartListEditor`) that the headless host cannot resolve — does
+  merging even survive an unresolvable `EditorTypeName`?
+- **Read the diffs without loading the module.** Parse the XAFML for the nodes that are platform-agnostic in
+  meaning (`PivotFieldArea`, `PivotSummaryType`) and ignore what is not. Possibly the cheapest useful
+  subset, and possibly a layering violation the model system will not tolerate.
+
+**Spike first, decide second.** The make-or-break unknown is whether an app-level or Blazor-module diff can
+be merged into a UI-less host's model at all when its `EditorTypeName` names a type the host cannot resolve.
+Answer that against the installed 26.1 source and one of the demo `Model.xafml` files before costing any of
+the three options. If it cannot be merged, option 2 dies and this card closes with a real platform limit
+written down — which is worth having either way.
+
+**Do not build any view until this is settled** — it decides whether [[PIVOT-001]] is authored in a
+host-owned module or read from the app layer, and those are different pieces of work.
+
 #### PIVOT-001: Project and render XAF PivotGrid (analysis) views (ID: 1227)
 
-**Same finding as [[CHART-001]], checked 2026-08-09: not model-declared, so there is nothing to project.**
+**PREMISE CORRECTED 2026-08-09. The earlier finding — "not model-declared, so there is nothing to project"
+— was WRONG, and wrong in a way worth understanding: it was read off the demo's *module* model, while the
+pivot is declared in its *app* model.**
 
-No `<Analysis>` node, no analysis-info member on any business object, nothing in the XAFML describing pivot
-fields or areas. What exists is `PivotGridModule` registered in `Module.cs` and `Quote_DetailView_Pivot`, a
-**cloned DetailView** whose pivot-ness comes from platform-specific UI code.
+A Blazor pivot is **fully model-declared**, and by the very nodes this projector already walks.
+`OutlookInspiredDemo.Blazor.Server/Model.xafml`:
 
-So the aggregation question this card was blocked on — server `$apply` versus a capped in-memory bind —
-never arises: there is no pivot definition to render. That question was the stated reason this card was
-sized large and sequenced late; it is moot.
+    <ListView Id="QuoteAnalysis_ListView" EditorTypeName="…Blazor.Editors.DxPivotGridListEditor">
+      <Columns>
+        <ColumnInfo Id="State"       PivotFieldArea="Row"  SortOrder="Ascending" />
+        <ColumnInfo Id="City"        PivotFieldArea="Row"  SortOrder="Ascending" />
+        <ColumnInfo Id="Total"       PivotFieldArea="Data" PivotSummaryType="Sum"     Caption="Opportunities" DisplayFormat="{0:C0}" />
+        <ColumnInfo Id="Opportunity" PivotFieldArea="Data" PivotSummaryType="Average" Caption="Percentage" />
+      </Columns>
+    </ListView>
 
-Same three options and the same recommendation as CHART-001. Keep it open rather than closing: if a target
-app declares pivots through XAF's Analysis editor over an analysis-info member, that IS projectable — this
-module simply does not use it. Re-check against the real target app, not this demo.
+`PivotFieldArea` and `PivotSummaryType` are properties on the ordinary `ColumnInfo` nodes. No companion
+type, no code, nothing to invent — the pivot definition is model, end to end.
+`IModelListViewPivotGridBlazor.LayoutSettings` also exists but is **not** the definition: its own
+description is "Stores the runtime changes in a Pivot Grid layout" (26.1 source,
+`DevExpress.ExpressApp.Blazor/SystemModule/Module.cs:516-520`) — user drag-drop state, not design time.
+
+**So this card is unblocked in principle and blocked in practice by one thing only: which model layer this
+host merges.** That is [[MODEL-001]], and it must be settled first — it decides whether the pivot view is
+authored in a host-owned module or read from the app layer, which are different pieces of work.
+
+**What is now true about the aggregation question** this card was originally sized on: it is real again,
+and NPO-001 already met its shape once. `QuoteAnalysis` is one row per Quote (10,000 seeded), and both
+Blazor and WinForms pivot editors are **client-data-access only** (`PivotGridListEditor` explicitly rejects
+Server/ServerView/InstantFeedback, dxdocs 26.1) — so the aggregation has to happen server-side before rows
+reach the editor, exactly the constraint the `TopReturnedObjects` cap addresses for lists.
+
+`PivotGridModule` is registered in the demo's `Module.cs`, and `Quote_DetailView_Pivot` is a cloned
+DetailView whose pivot-ness is platform code — both true, neither load-bearing now that the real
+declaration has been found.
 
 #### DASH-001: Project and render DashboardViews (ID: 1229)
 

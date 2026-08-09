@@ -9,10 +9,18 @@
 @* GAP-007: AuthGuard defers rendering (and the OData fetch) until the JWT is present -- restored from
    sessionStorage on the first interactive render. The /login redirect is centralized in MainLayout. *@
 <AuthGuard>
-    <XafDetailView ViewId="@ViewId" ObjectKey="@ObjectKey" />
+    <XafDetailView ViewId="@ViewId" ObjectKey="@ObjectKey"
+                   MasterMember="@MasterMember" MasterKey="@MasterKey" />
 </AuthGuard>
 
 @code {
     [Parameter] public string ViewId { get; set; } = "";
     [Parameter] public string ObjectKey { get; set; } = "";
+
+    // CRUD-002: creating a child FROM its master's nested grid. The association has to survive the
+    // navigation, and the route alone cannot carry it -- /new/{ViewId} says which view, not what the new
+    // object belongs to. A query string keeps the route shape intact and is ignored entirely by the
+    // ordinary "New" on a top-level list, which supplies neither.
+    [SupplyParameterFromQuery] public string? MasterMember { get; set; }
+    [SupplyParameterFromQuery] public string? MasterKey { get; set; }
 }

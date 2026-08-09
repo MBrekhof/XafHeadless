@@ -1,5 +1,38 @@
 # XafHeadless — DONE
 
+#### CRUD-002 (new half): Creating a child from its master's nested grid (ID: 1235)
+
+**Done 2026-08-09. With the delete half below, CRUD-002 is complete.**
+
+New on an aggregated nested grid opens the **child's own create form**, carrying the master so the object is
+associated with the record the user clicked New inside. `/new/{ViewId}` says which view to open, not what
+the new object belongs to, so the master rides along as a query string (`masterMember` + `masterKey`) that
+`DetailPage` reads via `[SupplyParameterFromQuery]` and `XafDetailView` seeds into **`changes`** — it is
+precisely a pending change the create will write. An ordinary New on a top-level list supplies neither and
+is untouched.
+
+**Seeding `changes` rather than `values` is the load-bearing detail.** `OrderItem_DetailView` does not lay
+out its `Order` member at all — visible in the screenshot, which shows only Product, Units, Price, Discount
+and Total. Had the association been treated as a displayed value it would have been dropped on a form that
+never displays it, and the create would have produced an orphan. The user should not have to pick the
+parent they just clicked New inside.
+
+**A full form rather than an instant blank row**, deliberately: a child type with required members would
+simply 422 on a blank create, so "add a row then fill it in" only works for types that happen to have no
+validation rules. A form works for every type.
+
+The E2E asserts the association on the **server** (`$filter=Order/ID eq …` → count 1), not just that the
+create succeeded — a create that merely returned 201 would satisfy every UI check and still be wrong, since
+an orphan child is the exact failure this prevents. It also waits for the child view to *render* before
+screenshotting, after the first run captured a mid-load "Loading…" frame; asserting only the URL is how
+BUG-009 stayed hidden.
+
+Tests: `Components.Tests` 113/113, `Api.Tests` 75/75, E2E **15/16** (+1; the failure is `JobServerE2ETests`
+needing smtp4dev). Build 0 warnings.
+
+Files: `DetailPage.razor`, `XafDetailView.razor`, `LayoutNodeRenderer.razor`,
+`NestedCreateE2ETests.cs` (new).
+
 #### CRUD-002 (delete half): Removing an aggregated child from its nested grid (ID: 1235)
 
 **Done 2026-08-09 — the Delete half only. The New half is still open on the card.**

@@ -55,6 +55,7 @@
             <XafListView ViewId="@(node.ViewId ?? "")" MasterKeyMember="@node.MasterKeyMember" MasterKey="@State.ObjectKey"
                          MasterKeyName="@State.KeyMember"
                          AllowRowDelete="@(node.Aggregated == true)"
+                         OnNewRequested="@(node.Aggregated == true ? EventCallback.Factory.Create(this, () => NavigateToNew(node)) : default)"
                          OnRowSelected="@(key => NavigateToRow(node, key))" />
         </div>
         break;
@@ -74,6 +75,21 @@
     // state after the click, and no test clicked a nested row.
     //
     // The old derivation stays only as the fallback for a host that predates DetailViewId.
+    // CRUD-002: New on an AGGREGATED nested grid opens the child's own create form, carrying the master so
+    // the new object is associated with the record the user clicked "New" inside. Without that hand-off the
+    // form would create an orphan the user then has to re-parent by hand -- and for a composite child there
+    // is no sensible way to do so, because its whole identity is "belongs to this master".
+    //
+    // Deliberately the full DetailView rather than an immediate blank row: a child type with required
+    // members would simply 422 on a blank create, so "add a row then fill it in" only works for types that
+    // happen to have no rules. A form works for every type.
+    void NavigateToNew(LayoutNode node) {
+        if (string.IsNullOrEmpty(node.DetailViewId) || string.IsNullOrEmpty(node.MasterKeyMember)) return;
+        var query = $"?masterMember={Uri.EscapeDataString(node.MasterKeyMember)}" +
+                    $"&masterKey={Uri.EscapeDataString(State.ObjectKey)}";
+        Navigation.NavigateTo($"/new/{node.DetailViewId}{query}");
+    }
+
     void NavigateToRow(LayoutNode node, string key) {
         var target = node.DetailViewId
             ?? node.ViewId?.Replace("_ListView", "_DetailView");

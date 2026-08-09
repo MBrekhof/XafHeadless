@@ -227,23 +227,10 @@ Also unimplemented, lower value: `PdfViewerPropertyEditor` (4 uses; needs a view
 decision), `MapHomeOfficePropertyEditor` and `EnumImageOnlyEditor` (demo-custom, no general meaning). All
 fall back to their CLR editors and are fine there.
 
-#### CRUD-002: Inline nested-collection editing (ID: 1235)
-
-**Delete half DONE 2026-08-09 (`docs/DONE.md`). New half still open — do not read this card as finished.**
-
-Shipped: per-row Delete on **aggregated** nested grids. `ApiClient.DeleteAsync` uses the same validating
-write path as save/create (never OData DELETE, blocked host-wide) and reports whether the delete happened,
-because the caller refreshes a grid on it. `XafListView` gains an opt-in `AllowRowDelete`;
-`LayoutNodeRenderer` sets it **only when `LayoutNode.Aggregated` is true**, honouring GAP-010's rule — a
-composite child is owned by its master (New/Delete), a shared collection needs Link/Unlink because deleting
-there would destroy an object other records reference. The column also requires the projected
-`Allow.Delete` (model ∩ security). `OrderItem` joined `SaveController.ExposedTypes`.
-
-**Still to do — the New half:** a create form for a child with the master FK pre-set. Every piece exists —
-CRUD-001's `/new/{ViewId}` route and create path, BUG-009's projected `DetailViewId`, and the nested node's
-`MasterKeyMember`/`MasterKey` — and the wire behaviour is proven (`POST api/save/OrderItem
-{"Order":"<masterKey>"}` → 201). What is missing is carrying the master through the route so the form opens
-pre-associated; simplest is a query string on `/new/{ViewId}` that `XafDetailView` seeds into `changes`.
+_CRUD-002 (inline nested-collection editing — per-row Delete plus New opening the child's own create
+form with the master carried through the route) done 2026-08-09, **both halves** — see `docs/DONE.md`.
+Gated on `LayoutNode.Aggregated` throughout, honouring GAP-010's rule that a shared collection needs
+Link/Unlink rather than New/Delete._
 
 #### EXPORT-001: Export a list view to XLSX/PDF (ID: 1236)
 

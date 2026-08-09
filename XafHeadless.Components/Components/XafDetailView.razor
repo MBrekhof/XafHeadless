@@ -80,6 +80,10 @@
     [Parameter] public string ViewId { get; set; } = "";
     [Parameter] public string ObjectKey { get; set; } = "";
     [Parameter] public IReadOnlyDictionary<string, RenderFragment<object?>>? MemberTemplates { get; set; }
+    // CRUD-002: when a child is created from its master's nested grid, the master arrives here and is
+    // seeded as a pending change so the create posts the association. Both null for an ordinary New.
+    [Parameter] public string? MasterMember { get; set; }
+    [Parameter] public string? MasterKey { get; set; }
 
     ViewMetadata? meta;
     Dictionary<string, object?> values = new();
@@ -98,7 +102,9 @@
     bool commandSuccess;
 
     protected override async Task OnParametersSetAsync() {
-        var target = $"{ViewId}|{ObjectKey}";
+        // CRUD-002: the master is part of what identifies this load -- two /new URLs differing only by
+        // masterKey must not be treated as the same form.
+        var target = $"{ViewId}|{ObjectKey}|{MasterMember}|{MasterKey}";
         if (target == loadedFor) return;
         await Load();
         loadedFor = target;
@@ -125,6 +131,15 @@
                     .Where(i => i.Member is not null)
                     .GroupBy(i => i.Member!)
                     .ToDictionary(g => g.Key, _ => (object?)null);
+                // CRUD-002: seed the master association as a PENDING CHANGE rather than a displayed value.
+                // It is exactly that -- something this create will write -- and putting it in `changes` is
+                // what makes the create post it. It is seeded even when the master member is not laid out
+                // on the child's DetailView (OrderItem's is not), which is the normal case: the user
+                // should not have to pick the parent they just clicked "New" inside.
+                if (!string.IsNullOrEmpty(MasterMember) && !string.IsNullOrEmpty(MasterKey)) {
+                    changes[MasterMember] = MasterKey;
+                    if (values.ContainsKey(MasterMember)) values[MasterMember] = MasterKey;
+                }
                 BuildState();
                 return;
             }
@@ -190,7 +205,7 @@
             saved = true;
             loadedFor = null;                       // force a full reload of fresh server values
             await Load();
-            loadedFor = $"{ViewId}|{ObjectKey}";
+            loadedFor = $"{ViewId}|{ObjectKey}|{MasterMember}|{MasterKey}";
         } else {
             memberErrors = outcome.MemberErrors;
             messages = outcome.Messages.ToList();

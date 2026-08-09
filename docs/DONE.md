@@ -42,7 +42,7 @@ box), and running a report for the current grid's selection.
 Files: `Pages/Reports.razor`, `ApiClient.cs`, `Contracts/ReportParameter.cs` (new),
 `ReportParametersE2ETests.cs` (new), `ReportRunE2ETests.cs` (removed).
 
-#### RPT-001 (parameters, server side): Reports declare parameters and runs can supply them (ID: 1230)
+#### RPT-001 (parameters, server side): Reports declare parameters and runs can supply them
 
 **Done 2026-08-09 — the API half. The client parameter form is still open.**
 
@@ -83,7 +83,7 @@ Tests: `Api.Tests` 79/79, `Components.Tests` 113/113. Build 0 warnings.
 Files: `ReportsController.cs`, `ReportRenderService.cs`, `RenderReportCommand.cs`, `RenderReportHandler.cs`,
 `EmailOrdersReportHandler.cs`.
 
-#### RPT-001 (run button): Reporting works from the UI, end to end (ID: 1230)
+#### RPT-001 (run button): Reporting works from the UI, end to end
 
 **Done 2026-08-09. RPT-001's core is now complete** — a user picks a report, clicks Run, and gets a PDF.
 
@@ -120,7 +120,7 @@ real remaining piece.
 Files: `Pages/Reports.razor`, `ApiClient.cs`, `Web/wwwroot/download.js` (new), `Web/Components/App.razor`,
 `ReportRunE2ETests.cs` (new).
 
-#### RPT-001 (run + collect): A chosen report is rendered and served back to whoever asked (ID: 1230)
+#### RPT-001 (run + collect): A chosen report is rendered and served back to whoever asked
 
 **Done 2026-08-09.** The chain now runs end to end: `POST api/reports/{id}/run` → 202 + a correlation id →
 the JobServer renders → `GET api/reports/runs/{correlationId}` → 200 + PDF. Verified live: **57,051 bytes
@@ -167,7 +167,7 @@ page still says running is not wired up, because it is not wired up *there* yet.
 Files: `ReportsController.cs`, `ReportArtifact.cs`, `RenderReportCommand.cs` (new),
 `RenderReportHandler.cs` (new), `JobServer/Startup.cs`, `Api/Startup.cs`, `ReportsTests.cs` (new).
 
-#### RPT-001 (catalogue half): The report catalogue reaches the client (ID: 1230)
+#### RPT-001 (catalogue half): The report catalogue reaches the client
 
 **Done 2026-08-09 — the catalogue only. Running a report is still open on the card.**
 
@@ -240,7 +240,7 @@ needing smtp4dev). Build 0 warnings.
 Files: `DetailPage.razor`, `XafDetailView.razor`, `LayoutNodeRenderer.razor`,
 `NestedCreateE2ETests.cs` (new).
 
-#### CRUD-002 (delete half): Removing an aggregated child from its nested grid (ID: 1235)
+#### CRUD-002 (delete half): Removing an aggregated child from its nested grid
 
 **Done 2026-08-09 — the Delete half only. The New half is still open on the card.**
 
@@ -375,7 +375,14 @@ Files: `ViewMetadataProjector.cs`, `ViewMetadataDtos.cs`, `Contracts/ViewMetadat
 `HyperLinkEditor.razor` (new), `ProgressBarEditor.razor` (new), `DetailViewMetadataTests.cs`,
 `KnownModel.cs`, `EditorMapTests.cs`, `ApiClientTests.cs`, `EditorAliasE2ETests.cs` (new).
 
-#### LOOKUP-001 + PH2-005: A dedicated lookup candidate endpoint, so the editor stops losing values (ID: 1232, ID: 541)
+#### PH2-005: Dedicated read-only lookup endpoint (ID: 541)
+
+**Done 2026-08-09 as part of LOOKUP-001 — see the entry immediately below for the detail.** Deferred as
+YAGNI on 2026-07-12 for want of a consumer; the write-capable lookup editor was that consumer, so the two
+were built together. `api/lookup/{type}` reads through a secured `IObjectSpace`, so a lookup target needs no
+OData exposure at all — which was this card's original scalability argument.
+
+#### LOOKUP-001: A dedicated lookup candidate endpoint, so the editor stops losing values (ID: 1232)
 
 **Done 2026-08-09.** Two card premises were wrong and the work is smaller and different because of it.
 

@@ -33,5 +33,12 @@ public class ReportCatalogueE2ETests : PlaywrightFixture {
         await Expect(Page.GetByText(new Regex(@"OutlookInspiredDemo\.Module\.Resources\.Reports\.")).First)
             .ToBeVisibleAsync(new() { Timeout = 10000 });
         await Shot("rpt001-01-report-catalogue");
+
+        // BUG-013: a HARD navigation to /reports -- fresh circuit, token restored from sessionStorage on
+        // the first interactive render. The catalogue used to fetch before that restore, get 401, and show
+        // "No reports are available to you." to a logged-in user. Same catalogue assertion as above.
+        await Page.GotoAsync(ClientBaseUrl + "/reports", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        await Expect(Page.GetByText("Revenue Analysis").First).ToBeVisibleAsync(new() { Timeout = 20000 });
+        await Expect(Page.GetByText("No reports are available to you.")).ToHaveCountAsync(0);
     }
 }

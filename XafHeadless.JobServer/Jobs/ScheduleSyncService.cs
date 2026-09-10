@@ -50,7 +50,23 @@ public sealed class ScheduleSyncService(
             if (d.NextRunUtc != next) { d.NextRunUtc = next; dirty = true; }
         }
         if (dirty) objectSpace.CommitChanges();
+
+        // BUG-011: the loop above only sees rows that EXIST. A definition that was deleted, or whose
+        // JobTypeName was edited to something unsupported, left its recurring job registered and firing.
+        // Every supported type without a live (enabled + cron) row gets its schedule removed here.
+        foreach (var orphan in Orphans(definitions.Select(d => (d.JobTypeName, d.IsEnabled, d.CronExpression)))) {
+            logger.LogInformation("No enabled JobDefinition for '{Type}' -- removing its recurring job", orphan);
+            dispatch.RemoveScheduleByName(orphan);
+        }
         logger.LogDebug("Schedule sync reconciled {Count} JobDefinition rows", definitions.Count);
+    }
+
+    // Pure so it can be unit-tested without an object space: the supported job types that have no
+    // enabled, cron-bearing definition row and must therefore not be scheduled.
+    public static IEnumerable<string> Orphans(IEnumerable<(string JobTypeName, bool IsEnabled, string? CronExpression)> rows) {
+        var live = rows.Where(r => r.IsEnabled && !string.IsNullOrWhiteSpace(r.CronExpression))
+            .Select(r => r.JobTypeName).ToHashSet();
+        return JobDispatchService.SupportedJobTypes.Where(t => !live.Contains(t));
     }
 
     // Reads Hangfire's own recurring-job state for the single recurring job. On the live SqlServer

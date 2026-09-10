@@ -1,5 +1,49 @@
 # XafHeadless — DONE
 
+#### Codex review round 2026-09-10: BUG-010…BUG-015, LOOKUP-003, TEST-004 (IDs 1605–1612)
+
+**Done 2026-09-10.** Codex reviewed `e02b29c` (24 findings); nine were carded after each was verified in
+the code, eight fixed in this round, one (SEC-003, 1613) parked in P3 as the documented production gap.
+Codex then reviewed the fix range for correctness only: seven commits clean, two test findings, both fixed
+in `81b5baf`. Suites after the round, all against live hosts: Components 114, Api 85, JobServer 20, E2E 21.
+
+**A side effect worth stating plainly: the "three environmental failures" were not environmental.** The
+handoff since 2026-08-09 said the `JobExecutionRecord reaches Success` family fails with an
+optimistic-concurrency clash and told readers not to chase it. Once the tests keyed on their own run's
+correlation id instead of "the latest record on the shared catalog", all 20 JobServer tests passed twice in
+a row. The clash was two tests and the scheduler contending over one row the tests had no business
+sharing.
+
+- **BUG-010 (ID: 1605) `91d6e98`** — `XafDetailView` gained the `loadSeq` guard `XafListView` already had; a
+  superseded load's response is discarded after every await, Save posts to the loaded state's key, and
+  `loadedFor` is stamped before the await. Also: "Saved." now actually shows after an update (Load reset it).
+- **BUG-014 (ID: 1610) `91d6e98`** — the CRUD-002 master seed lives in `SeedMaster()`, called from Load and
+  OnCancel. `NestedCreateE2ETests` clicks Cancel before Save; the association assertion is the check.
+- **BUG-012 (ID: 1607) `9121d34`** — `EnumValueCanon.Find` matches Name first, Value second; grid captions and
+  the enum editor both use it, the editor's option value is the member name (what OData sends and
+  `api/save` accepts). Visible in every E2E screenshot: Ship Method / Shipment Status / Payment Status
+  render captions where they rendered blank.
+- **BUG-013 (ID: 1609) `481a3db`** — `Reports.razor` is the route + `AuthGuard` shell, `ReportsPanel` the
+  component that fetches, mirroring ListView/DetailPage. E2E hard-navigates to `/reports`.
+- **LOOKUP-003 (ID: 1608) `0c9e45b`, `8b6c224`** — the editor asks for `top=200`. The E2E picks a candidate
+  outside the default page and not the order's own employee (which the endpoint always returns).
+- **BUG-015 (ID: 1611) `187b00d`** — literal `null` and malformed JSON become the recipient guard's
+  `ArgumentException`; two new rows in `M4RecipientGuardTests`.
+- **BUG-011 (ID: 1606) `d74e03a`** — `ScheduleSyncService.Orphans()` removes the recurring job of any supported
+  type without a live definition; pure, unit-tested in `ScheduleOrphanTests`.
+- **TEST-004 (ID: 1612) `7492d0d`, `81b5baf`** — `EmailOrdersReportCommand` carries a `CorrelationId`
+  (`IJobCorrelation`, which `RenderReportCommand` already satisfied); the Api's Run Now mints it and returns
+  it on `CommandResult`; `JobExecutionRecord.CorrelationId` (new nullable column, schema-updated on
+  mismatch by both hosts), `ReportArtifact.CorrelationId` and the email body carry it. Run/Render/Email
+  tests assert their own run. `ScheduleSyncTests` selects the seed by JobTypeName, proves disable → enable
+  → disable, and restores a snapshot of every property it touched (ParametersJson included).
+- **SEC-003 docs half `a77ea5b`** — README no longer claims tested multi-tenancy or CRUD on
+  `JobExecutionRecord`; LOOKUP-002's body no longer assumes the editor fetched the cap.
+
+**Not done, by choice:** `XafHeadless.E2E/JobServerE2ETests` still uses the "latest record" pattern — it
+clicks the UI's Run Now button and the UI does not surface the correlation id. Acceptable for a UI smoke
+test; if it ever flakes, surface the id in the command message.
+
 #### ARCH-001: Direction — headless is a growth path for painful views, not a replacement for XAF (ID: 1246)
 
 **Closed as a decision 2026-08-09 (owner) — no code.** Same shape as PH2-003: a recorded direction, so it

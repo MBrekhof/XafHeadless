@@ -133,7 +133,7 @@ per-view client code**.
 | **Per-user layout prefs** | `GET/PUT api/prefs/{viewId}` stores per-user DxGrid column state (order/width), keyed strictly to the authenticated identity. |
 | **Non-persistent types** | `GET api/nonpersistent/{type}` serves computed/aggregate `[DomainComponent]` types — the ones with **no `DbSet`**, which OData cannot serve at any URL. The host registers how each is populated; `ObjectsGetting` then runs against a `NonPersistentObjectSpace` whose additional (secured) ObjectSpaces are attached, so aggregates are permission-trimmed by XAF. Same response envelope as OData, so the whole grid binding is reused. **Read-only by nature** (a computed object has nowhere to save to) and capped by the model's own `IModelListView.TopReturnedObjects`, with the true total still reported so the grid says "first N of M" rather than presenting a truncated set as complete. |
 | **Commands** | Server-side XAF logic crosses the wire as named commands (`IHeadlessCommand` → `POST api/commands/{id}`), executed against a **secured** ObjectSpace — same posture as the OData/save paths, no bypass. This is also the answer to the actions gap below: an action's *declaration* is model-declared and projectable, its *effect* is re-expressed here. Better as an API than remoting "execute action X on view Y" would have been — and the cost is per action, forever. |
-| **Background jobs** | A separate UI-less **Hangfire** worker host (`XafHeadless.JobServer`, `:5300`) runs work off the request path so long/heavy jobs never block a request or die with the API. `JobDefinition`-driven **cron**, an admin-gated write path for the shared job config, a **"Run Now"** button, and one end-to-end job — `EmailOrdersReport` renders the demo's Orders report to a PDF in a **tenant-isolated child scope** and emails it (MailKit), enqueued from the Api via `POST api/commands/EmailOrdersReport` into shared Hangfire SQL. `JobDefinition`/`JobExecutionRecord` get full CRUD through the same generic client (one server-side OData convention makes host-shared BOs read correctly — see finding 6). |
+| **Background jobs** | A separate UI-less **Hangfire** worker host (`XafHeadless.JobServer`, `:5300`) runs work off the request path so long/heavy jobs never block a request or die with the API. `JobDefinition`-driven **cron**, an admin-gated write path for the shared job config, a **"Run Now"** button, and one end-to-end job — `EmailOrdersReport` renders the demo's Orders report to a PDF in a **tenant-isolated child scope** and emails it (MailKit), enqueued from the Api via `POST api/commands/EmailOrdersReport` into shared Hangfire SQL. `JobDefinition` gets admin-gated CRUD and `JobExecutionRecord` is read-only through the same generic client (one server-side OData convention makes host-shared BOs read correctly — see finding 6). |
 
 Its central design property: **nothing in the projection or rendering path is view-specific.** Expose a
 business type and its views render — no client change.
@@ -160,8 +160,13 @@ record: [`docs/DONE.md`](docs/DONE.md) (SVR-001).
 
 This is a working seed, not a toy — but it's a *seed*. If you're weighing it for real use:
 
-- **Solid:** security trimming, the validating save contract, the guarded OData write surface, multi-tenancy,
-  and render-mode freedom are all enforced and tested, not aspirational.
+- **Solid:** security trimming, the validating save contract, the guarded OData write surface, and
+  render-mode freedom are all enforced and tested, not aspirational.
+- **Tested for one tenant only.** The host is multi-tenant by construction, but the demo seeds one tenant
+  and every automated test logs into it. Two things are single-tenant by design and would be the first wall
+  in a real deployment (`SEC-003` in `TODO.md`): background report rendering logs on as that tenant's admin
+  (ReportsV2's data-fill needs an authenticated context), and the host-shared `JobDefinition` write path is
+  gated on "has an administrative role", which any tenant's admin satisfies.
 - **Plan for:** host-owned entities need EF Core **migrations** in a non-disposable deployment (the dev host
   catalog is created/recreated wholesale); app-level `Model.xafml` customizations are out of scope by
   decision — **module-level model is the contract** (put customizations in a module; note `MODEL-001` found

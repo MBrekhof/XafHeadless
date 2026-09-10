@@ -264,8 +264,9 @@ Neither is blocking; reporting is usable without both.
 server-side search — `Contains()` over the display path, evaluated by the data store, verified live (a
 search for "an" over 51 employees returned 13). The **editor** does not use it: `DxComboBox` is bound to
 `Data`, so its AutoSearch filters only the page already fetched. Correct for every lookup target in this
-model (largest is CustomerStore at 200, inside the endpoint's cap), wrong for a target with thousands of
-rows where the right candidate may not be in the page being searched.
+model since [[LOOKUP-003]] made the editor ask for the cap (largest is CustomerStore at 200, exactly the
+cap), wrong for a target with thousands of rows where the right candidate may not be in the page being
+searched.
 
 **What it takes** (verified against dxdocs 26.1): `DxComboBox.CustomData` is the documented remote-data
 binding and speaks the **DevExtreme.AspNet.Data `LoadResult` protocol** — the delegate takes a

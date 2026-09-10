@@ -101,15 +101,18 @@ credentials). The menu, lists, detail views, filtering, and saves are all driven
 **Tests**
 
 ```
-dotnet test XafHeadless.Components.Tests   # client unit tests, no host required
-dotnet test XafHeadless.Api.Tests          # API integration tests (needs the API host on :5200)
-dotnet test XafHeadless.E2E                # dual render-mode Playwright E2E (needs both hosts published & running)
+dotnet test XafHeadless.Components.Tests             # client unit tests, no host required
+dotnet test XafHeadless.Api.Tests --no-build         # API integration tests (needs the API host on :5200)
+dotnet test XafHeadless.E2E --no-build               # dual render-mode Playwright E2E (needs Api + Web + JobServer)
 dotnet test XafHeadless.JobServer.Tests --no-build   # needs Api + JobServer hosts + smtp4dev
 ```
 
-`--no-build` on the last one is not optional while the JobServer is running: the test project references
-it, so a rebuild tries to overwrite the exe the live host has locked and the run fails before a single
-test executes (`MSB3027: … locked by "XafHeadless.JobServer"`). Build first, then start the hosts.
+`--no-build` is not optional while a host is running: the test projects reference the hosts, so a rebuild
+tries to overwrite the exe the live host has locked and the run fails before a single test executes
+(`MSB3027: … locked by "XafHeadless.JobServer"`). Build the solution first, then start the hosts from
+their built exes (`bin/Debug/net10.0/<Host>.exe --urls http://localhost:<port>`), then test. All four
+suites are green as of 2026-09-10 (Components 114, Api 85, JobServer 20, E2E 21); there are no
+known-environmental failures.
 
 ![Architecture](docs/architecture.png)
 
@@ -133,7 +136,7 @@ per-view client code**.
 | **Per-user layout prefs** | `GET/PUT api/prefs/{viewId}` stores per-user DxGrid column state (order/width), keyed strictly to the authenticated identity. |
 | **Non-persistent types** | `GET api/nonpersistent/{type}` serves computed/aggregate `[DomainComponent]` types — the ones with **no `DbSet`**, which OData cannot serve at any URL. The host registers how each is populated; `ObjectsGetting` then runs against a `NonPersistentObjectSpace` whose additional (secured) ObjectSpaces are attached, so aggregates are permission-trimmed by XAF. Same response envelope as OData, so the whole grid binding is reused. **Read-only by nature** (a computed object has nowhere to save to) and capped by the model's own `IModelListView.TopReturnedObjects`, with the true total still reported so the grid says "first N of M" rather than presenting a truncated set as complete. |
 | **Commands** | Server-side XAF logic crosses the wire as named commands (`IHeadlessCommand` → `POST api/commands/{id}`), executed against a **secured** ObjectSpace — same posture as the OData/save paths, no bypass. This is also the answer to the actions gap below: an action's *declaration* is model-declared and projectable, its *effect* is re-expressed here. Better as an API than remoting "execute action X on view Y" would have been — and the cost is per action, forever. |
-| **Background jobs** | A separate UI-less **Hangfire** worker host (`XafHeadless.JobServer`, `:5300`) runs work off the request path so long/heavy jobs never block a request or die with the API. `JobDefinition`-driven **cron**, an admin-gated write path for the shared job config, a **"Run Now"** button, and one end-to-end job — `EmailOrdersReport` renders the demo's Orders report to a PDF in a **tenant-isolated child scope** and emails it (MailKit), enqueued from the Api via `POST api/commands/EmailOrdersReport` into shared Hangfire SQL. `JobDefinition` gets admin-gated CRUD and `JobExecutionRecord` is read-only through the same generic client (one server-side OData convention makes host-shared BOs read correctly — see finding 6). |
+| **Background jobs** | A separate UI-less **Hangfire** worker host (`XafHeadless.JobServer`, `:5300`) runs work off the request path so long/heavy jobs never block a request or die with the API. `JobDefinition`-driven **cron**, an admin-gated write path for the shared job config, a **"Run Now"** button, and one end-to-end job — `EmailOrdersReport` renders the demo's Orders report to a PDF in a **tenant-isolated child scope** and emails it (MailKit), enqueued from the Api via `POST api/commands/EmailOrdersReport` into shared Hangfire SQL — the response carries a **correlation id** that the run's `JobExecutionRecord`, `ReportArtifact` and email all carry, so a caller can find its own run rather than "the latest one". `JobDefinition` gets admin-gated CRUD and `JobExecutionRecord` is read-only through the same generic client (one server-side OData convention makes host-shared BOs read correctly — see finding 6). |
 
 Its central design property: **nothing in the projection or rendering path is view-specific.** Expose a
 business type and its views render — no client change.
@@ -259,7 +262,7 @@ TODO.md                         ← current backlog (what's built lives in docs/
 XafHeadless.Api/                ← 26.1 multi-tenant Web API host (OutlookInspired demo module, read-only ref)
 XafHeadless.Api.Tests/          ← API integration tests
 XafHeadless.JobServer/          ← UI-less Hangfire worker host: background jobs, report→PDF, email (SVR-001)
-XafHeadless.JobServer.Tests/    ← JobServer integration tests (boot/RunNow/schedule/render/email + M-4 guard)
+XafHeadless.JobServer.Tests/    ← JobServer integration tests (boot/RunNow/schedule/render/email, keyed on the run's correlation id) + host-free guard/orphan unit tests
 XafHeadless.Components/         ← RCL: XafListView/XafDetailView, editors, services — the client logic
 XafHeadless.Components.Tests/   ← client unit tests
 XafHeadless.Web/                ← Blazor Web App server host (InteractiveAuto), :5220

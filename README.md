@@ -281,3 +281,8 @@ docs/
 <sub>History: this platform began as a headless-XAF feasibility POC on a production 25.2 module; that
 kill-gate passed. The living code is 26.1, and this
 README describes only that.</sub>
+
+## License
+
+[MIT](LICENSE). DevExpress components are not covered by it: building and running this repo requires
+your own DevExpress 26.1 license, and nothing DevExpress-licensed is redistributed here.

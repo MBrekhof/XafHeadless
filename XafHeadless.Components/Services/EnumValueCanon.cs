@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using XafHeadless.Components.Contracts;
 
 namespace XafHeadless.Components.Services;
 
@@ -26,4 +27,15 @@ internal static class EnumValueCanon {
         bool b => b ? "true" : "false",
         _ => Convert.ToString(v, CultureInfo.InvariantCulture)
     };
+
+    // BUG-012: OData serialises an enum member as its NAME ("NeedAssistance"), while EnumValueMetadata.Value
+    // is the NUMBER. Matching only on Value never matched a live row, so captions fell back to the raw name
+    // and the enum editor showed blank for any existing value. Name first (the wire form), Value second
+    // (a numeric row, should a server ever send one).
+    internal static EnumValueMetadata? Find(IEnumerable<EnumValueMetadata> values, object? raw) {
+        var text = Canonicalize(raw);
+        if (text is null) return null;
+        return values.FirstOrDefault(e => e.Name == text)
+            ?? values.FirstOrDefault(e => Canonicalize(e.Value) == text);
+    }
 }

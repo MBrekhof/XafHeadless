@@ -1,11 +1,11 @@
 @inherits EditorComponentBase
 
-@* Enum values + captions come from the item metadata (no fetch). Current is the canonicalized value
-   token (see DetailBinding.ItemValue), so it matches an option's Value string.
-   ponytail: an edited enum is POSTed as its value token; round-trip through SaveController relies on
-   the server accepting that token for the enum member -- not exercised by the POC's save flow. *@
+@* Enum values + captions come from the item metadata (no fetch). BUG-012: an option's Value is the
+   member NAME -- that is what OData sends in a row and what api/save accepts back
+   (SaveReferenceAndEnumTests posts "Awaiting"). Current is matched through EnumValueCanon.Find so a row
+   carrying the number instead still selects the right option. *@
 <DxComboBox Data="@options" TData="Option" TValue="string"
-            Value="@((string?)Current)"
+            Value="@Selected"
             ValueChanged="@((string? v) => Set(v))"
             ValueFieldName="@nameof(Option.Value)"
             TextFieldName="@nameof(Option.Caption)"
@@ -21,11 +21,11 @@
     List<Option> options = new();
 
     protected override void OnParametersSet() =>
-        options = Node.Enum?.Select(e => new Option(Canon(e.Value), e.Caption)).ToList() ?? new();
+        options = Node.Enum?.Select(e => new Option(OptionValue(e), e.Caption)).ToList() ?? new();
 
-    static string Canon(object? v) => v switch {
-        System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.String } el => el.GetString() ?? "",
-        System.Text.Json.JsonElement el => el.GetRawText(),
-        _ => Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) ?? ""
-    };
+    string? Selected => Current is null ? null
+        : Node.Enum is { } values && EnumValueCanon.Find(values, Current) is { } hit ? OptionValue(hit)
+        : EnumValueCanon.Canonicalize(Current);
+
+    static string OptionValue(EnumValueMetadata e) => e.Name ?? EnumValueCanon.Canonicalize(e.Value) ?? "";
 }

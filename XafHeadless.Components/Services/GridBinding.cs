@@ -361,8 +361,7 @@ public static class GridBinding {
     static object? EnumCaption(JsonElement owner, string member, IReadOnlyList<EnumValueMetadata>? values) {
         var raw = RawValue(owner, member);
         if (raw is null || values is null) return raw;
-        var text = EnumValueCanon.Canonicalize(raw);
-        return values.FirstOrDefault(e => EnumValueCanon.Canonicalize(e.Value) == text)?.Caption ?? raw;
+        return EnumValueCanon.Find(values, raw)?.Caption ?? raw;
     }
 
     static object? RawValue(JsonElement row, string member) {

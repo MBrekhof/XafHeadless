@@ -362,6 +362,17 @@ public class GridBindingTests {
     }
 
     [TestMethod]
+    public void MaterializeRow_resolves_enum_caption_from_the_name_form_odata_actually_sends() {
+        // BUG-012: a live OData row carries the member NAME, not the number. Matching on Value alone never
+        // hit, so every enum cell showed the raw name and the enum editor showed blank.
+        var columns = new[] { new ColumnMetadata("Status", "Status", "enum", null, null, null,
+            [new EnumValueMetadata((object)3L, "Need Assistance", "NeedAssistance")]) };
+        var row = Row("""{"Status":"NeedAssistance"}""");
+
+        Assert.AreEqual("Need Assistance", GridBinding.MaterializeRow(row, columns)["Status"]);
+    }
+
+    [TestMethod]
     public void MaterializeRow_falls_back_to_raw_value_when_enum_value_has_no_matching_caption() {
         var columns = new[] { Enum("Status", (1, "Draft")) };
         var row = Row("""{"Status":99}""");

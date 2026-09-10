@@ -25,7 +25,7 @@ public sealed class XafJobExecutionRecorder(
             ? commandTypeName[..^"Command".Length]
             : commandTypeName;
 
-    public Task<Guid> RecordStartAsync(string jobName, string jobTypeName, string? parametersJson, CancellationToken cancellationToken = default) {
+    public Task<Guid> RecordStartAsync(string jobName, string jobTypeName, string? parametersJson, Guid? correlationId = null, CancellationToken cancellationToken = default) {
         using var objectSpace = objectSpaceFactory.CreateNonSecuredObjectSpace<JobExecutionRecord>();
 
         var record = objectSpace.CreateObject<JobExecutionRecord>();
@@ -33,6 +33,7 @@ public sealed class XafJobExecutionRecorder(
         record.JobTypeName = ToJobTypeName(jobName);
         record.StartedUtc = DateTime.UtcNow;
         record.Status = JobRunStatus.Running;
+        record.CorrelationId = correlationId;
 
         var jobDef = objectSpace.FirstOrDefault<JobDefinition>(d => d.JobTypeName == record.JobTypeName);
         if (jobDef != null) {

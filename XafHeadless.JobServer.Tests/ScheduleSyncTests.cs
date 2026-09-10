@@ -22,10 +22,20 @@ public class ScheduleSyncTests : JobServerTestBase {
 
         // NO $select -- SVR-003 (throws edmModel on host-shared types). Exactly one JobDefinition row
         // exists by design (SVR-002's unique index on JobTypeName), so value[0] IS the seeded row.
-        var listing = await api.GetFromJsonAsync<JsonElement>("api/odata/JobDefinition");
+        // TEST-004: the exact seeded row by JobTypeName, not rows[0] -- and a snapshot of every property this
+        // test overwrites, restored verbatim in `finally`. The old "restore" wrote hardcoded seed values and
+        // never put ParametersJson back, on the demo's one real definition.
+        var listing = await api.GetFromJsonAsync<JsonElement>(
+            "api/odata/JobDefinition?$filter=JobTypeName eq 'EmailOrdersReport'");
         var rows = listing.GetProperty("value");
-        Assert.IsGreaterThan(0, rows.GetArrayLength(), "expected the seeded JobDefinition row");
-        var id = rows[0].GetProperty("ID").GetString()!;
+        Assert.AreEqual(1, rows.GetArrayLength(), "expected exactly the seeded EmailOrdersReport JobDefinition row");
+        var seeded = rows[0];
+        var id = seeded.GetProperty("ID").GetString()!;
+        var snapshot = new Dictionary<string, object?> {
+            ["CronExpression"] = seeded.GetProperty("CronExpression").GetString(),
+            ["IsEnabled"] = seeded.GetProperty("IsEnabled").GetBoolean(),
+            ["ParametersJson"] = seeded.GetProperty("ParametersJson").GetString(),
+        };
 
         try {
             // Include ParametersJson so the M-4 cron guard doesn't abort the sync tick (docs/DEVIATIONS.md
@@ -43,21 +53,19 @@ public class ScheduleSyncTests : JobServerTestBase {
             Assert.IsNotNull(next,
                 $"NextRunUtc stayed null for {SyncWaitSeconds}s -- ScheduleSyncService did not register the recurring job");
         } finally {
-            // ALWAYS end disabled -- nothing may stay scheduled in the shared dev DB. Reset the cron back
-            // to the seed default for cleanliness. Do NOT delete the row -- it is the demo's one real
-            // definition, not a throwaway marker.
-            var disable = await api.PostAsJsonAsync($"api/save/JobDefinition/{id}", new Dictionary<string, object?> {
-                ["IsEnabled"] = false,
-                ["CronExpression"] = "0 7 * * *",
-            });
-            Assert.AreEqual(HttpStatusCode.OK, disable.StatusCode,
-                $"disable update failed -- the seeded definition may still be scheduled! {disable.StatusCode}");
+            // Restore the snapshot verbatim. Do NOT delete the row -- it is the demo's one real definition.
+            var restore = await api.PostAsJsonAsync($"api/save/JobDefinition/{id}", snapshot);
+            Assert.AreEqual(HttpStatusCode.OK, restore.StatusCode,
+                $"restore failed -- the seeded definition may still be scheduled! {restore.StatusCode}");
         }
 
-        // Disabling must remove the Hangfire schedule -> NextRunUtc nulls on the next tick.
-        var cleared = await PollNextRunUtcAsync(api, id, until: v => v is null);
-        Assert.IsNull(cleared,
-            $"NextRunUtc still set {SyncWaitSeconds}s after disabling -- the schedule was not removed");
+        // The seed is disabled, so restoring it must remove the Hangfire schedule -> NextRunUtc nulls on the
+        // next tick. If someone left the seed enabled, that is their schedule and this assertion is moot.
+        if (snapshot["IsEnabled"] is false) {
+            var cleared = await PollNextRunUtcAsync(api, id, until: v => v is null);
+            Assert.IsNull(cleared,
+                $"NextRunUtc still set {SyncWaitSeconds}s after restoring the disabled seed -- the schedule was not removed");
+        }
     }
 
     static async Task<DateTime?> PollNextRunUtcAsync(HttpClient api, string id, Func<DateTime?, bool> until) {

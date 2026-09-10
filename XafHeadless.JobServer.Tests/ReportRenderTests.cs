@@ -15,18 +15,18 @@ public class ReportRenderTests : JobServerTestBase {
     [TestMethod]
     public async Task RunNow_renders_a_valid_PDF_ReportArtifact() {
         var api = await ApiClientAsync("Admin");
-        var baseline = await LatestExecutionRecordStartedUtcAsync(api);
-
-        await RunNowAsync(api);
-        var success = await WaitForNewSuccessAsync(api, baseline);
-        Assert.IsNotNull(success, "a NEW JobExecutionRecord should have reached Status=Success within 30s");
+        var correlationId = await RunNowAsync(api);
+        var success = await WaitForSuccessAsync(api, correlationId);
+        Assert.IsNotNull(success, $"the JobExecutionRecord for run {correlationId} should have reached Status=Success within 30s");
 
         await using var connection = new SqlConnection(HostConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT TOP 1 Content FROM ReportArtifact ORDER BY CreatedUtc DESC";
+        // TEST-004: THIS run's artifact, not the newest one on the shared catalog.
+        command.CommandText = "SELECT Content FROM ReportArtifact WHERE CorrelationId = @id";
+        command.Parameters.AddWithValue("@id", correlationId);
         await using var reader = await command.ExecuteReaderAsync();
-        Assert.IsTrue(await reader.ReadAsync(), "no ReportArtifact row found in the host catalog");
+        Assert.IsTrue(await reader.ReadAsync(), $"no ReportArtifact row for run {correlationId} in the host catalog");
         var pdf = (byte[])reader["Content"];
 
         Assert.IsTrue(pdf.Length > 4 && pdf[0] == 0x25 && pdf[1] == 0x50 && pdf[2] == 0x44 && pdf[3] == 0x46,

@@ -21,9 +21,8 @@ public class EmailDeliveryTests : JobServerTestBase {
     public async Task RunNow_delivers_the_PDF_to_the_demo_recipient() {
         var baseline = DateTime.UtcNow;
         var api = await ApiClientAsync("Admin");
-        var executionBaseline = await LatestExecutionRecordStartedUtcAsync(api);
 
-        await RunNowAsync(api);
+        var correlationId = await RunNowAsync(api);
 
         // smtp4dev field names confirmed live against the running xafheadless-smtp sink: results[]
         // with .to (array of recipient strings), .subject, .attachmentCount, .receivedDate (ISO),
@@ -55,7 +54,7 @@ public class EmailDeliveryTests : JobServerTestBase {
         // The job's JobExecutionRecord must ALSO reach Success -- the archive write happens after the
         // send, and a failed archive still fails the job even though the mail already left (same lesson
         // the companion implementation's test documents).
-        var success = await WaitForNewSuccessAsync(api, executionBaseline);
-        Assert.IsNotNull(success, "no Success JobExecutionRecord for this run within 30s");
+        var success = await WaitForSuccessAsync(api, correlationId);
+        Assert.IsNotNull(success, $"no Success JobExecutionRecord for run {correlationId} within 30s");
     }
 }

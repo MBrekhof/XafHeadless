@@ -19,9 +19,10 @@ public sealed class JobExecutor<TCommand>(
         try { parametersJson = JsonSerializer.Serialize(command); }
         catch { /* non-critical */ }
 
+        Guid? correlationId = command is IJobCorrelation { CorrelationId: var c } && c != Guid.Empty ? c : null;
         var recordId = await executionRecorder.RecordStartAsync(
             typeof(TCommand).Name, typeof(TCommand).FullName ?? typeof(TCommand).Name,
-            parametersJson, cancellationToken);
+            parametersJson, correlationId, cancellationToken);
 
         progressReporter.Initialize(recordId);
 

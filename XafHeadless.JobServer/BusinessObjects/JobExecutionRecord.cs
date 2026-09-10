@@ -22,4 +22,7 @@ public class JobExecutionRecord : BaseObject {
     public virtual string? ErrorMessage { get; set; }
 
     public virtual long DurationMs { get; set; }
+
+    // TEST-004: the enqueuer's id (IJobCorrelation), so a caller can find its own run. Null for scheduled runs.
+    public virtual Guid? CorrelationId { get; set; }
 }

@@ -17,25 +17,20 @@ namespace XafHeadless.JobServer.Tests;
 [DoNotParallelize]
 public class RunNowTests : JobServerTestBase {
     [TestMethod]
-    public async Task RunNow_EmailOrdersReport_enqueues_and_reaches_Success_with_exactly_one_new_record() {
+    public async Task RunNow_EmailOrdersReport_enqueues_and_reaches_Success_with_exactly_one_record() {
         var api = await ApiClientAsync("Admin");
-        var baseline = await LatestExecutionRecordStartedUtcAsync(api);
 
-        await RunNowAsync(api);
+        var correlationId = await RunNowAsync(api);
 
-        var success = await WaitForNewSuccessAsync(api, baseline);
-        Assert.IsNotNull(success, "a NEW JobExecutionRecord should have reached Status=Success within 30s");
+        var success = await WaitForSuccessAsync(api, correlationId);
+        Assert.IsNotNull(success, $"the JobExecutionRecord for run {correlationId} should have reached Status=Success within 30s");
 
         // I-1 (docs/DEVIATIONS.md SVR-001 Dispatch F): this asserts the happy-path no-duplicate case
-        // ONLY -- one enqueue produced exactly one execution record since baseline; a spurious Hangfire
-        // retry would produce a second. The FULL at-most-once guarantee (no double-send when post-send
-        // bookkeeping itself fails) is a documented residual ceiling, provable only via live SMTP fault
-        // injection (Dispatch F did that by hand) -- not automatable here. Do not overclaim beyond this.
-        var page = await api.GetFromJsonAsync<JsonElement>(
-            "api/odata/JobExecutionRecord?$orderby=StartedUtc desc&$top=5");
-        var newCount = page.GetProperty("value").EnumerateArray()
-            .Count(r => baseline is null || r.GetProperty("StartedUtc").GetDateTime() > baseline);
-        Assert.AreEqual(1, newCount,
-            "expected exactly one new JobExecutionRecord since baseline -- a spurious retry would produce a second");
+        // ONLY -- one enqueue produced exactly one execution record; a spurious Hangfire retry would run
+        // the same command again and produce a second record with the SAME correlation id. The FULL
+        // at-most-once guarantee (no double-send when post-send bookkeeping itself fails) is a documented
+        // residual ceiling, provable only via live SMTP fault injection -- not automatable here.
+        Assert.HasCount(1, await RecordsForAsync(api, correlationId),
+            "expected exactly one JobExecutionRecord for this run -- a spurious retry would produce a second");
     }
 }

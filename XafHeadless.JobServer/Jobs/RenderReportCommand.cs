@@ -18,4 +18,4 @@ public sealed record RenderReportCommand(
     string? Criteria,
     string RequestedBy,
     Guid CorrelationId,
-    Dictionary<string, string?>? Parameters = null);
+    Dictionary<string, string?>? Parameters = null) : IJobCorrelation;

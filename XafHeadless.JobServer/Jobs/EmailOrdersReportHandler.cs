@@ -39,6 +39,7 @@ public sealed class EmailOrdersReportHandler(
             artifact.ContentType = "application/pdf";
             artifact.Content = rendered.Pdf;
             artifact.CreatedUtc = DateTime.UtcNow;
+            artifact.CorrelationId = command.CorrelationId;   // TEST-004: Guid.Empty for scheduled runs
             os.CommitChanges();
             artifactId = artifact.ID;
         }

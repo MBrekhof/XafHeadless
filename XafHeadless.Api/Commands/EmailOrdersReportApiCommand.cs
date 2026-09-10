@@ -11,10 +11,13 @@ public class EmailOrdersReportApiCommand(IBackgroundJobClient jobClient) : IHead
     public string Id => "EmailOrdersReport";
 
     public CommandResult Execute(IObjectSpace os, string[] objectKeys) {
+        // TEST-004: the id travels with the command and lands on the JobExecutionRecord and ReportArtifact,
+        // so the caller can poll for ITS run rather than "the latest one".
+        var correlationId = Guid.NewGuid();
         jobClient.Enqueue<XafHeadless.JobServer.Jobs.JobExecutor<XafHeadless.JobServer.Jobs.EmailOrdersReportCommand>>(
             executor => executor.RunAsync(
-                new XafHeadless.JobServer.Jobs.EmailOrdersReportCommand("demo-recipient@xafheadless.local"),
+                new XafHeadless.JobServer.Jobs.EmailOrdersReportCommand("demo-recipient@xafheadless.local", correlationId),
                 CancellationToken.None));
-        return new CommandResult(true, "Job enqueued.", []);
+        return new CommandResult(true, "Job enqueued.", [], correlationId);
     }
 }

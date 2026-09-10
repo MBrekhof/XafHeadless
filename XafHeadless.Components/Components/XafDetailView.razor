@@ -98,6 +98,12 @@
     bool IsNew => string.IsNullOrEmpty(ObjectKey);
     string? error;
     string? loadedFor;
+    // BUG-010: same guard XafListView uses. Blazor re-runs OnParametersSetAsync on the SAME component
+    // instance when the route's ObjectKey changes, so a load for the previous key can still be in flight
+    // when the next one starts. Every await in Load re-checks the sequence and discards a superseded
+    // result -- otherwise the OLD response lands last, overwrites `values`, and Save posts edits made
+    // against the wrong record to the current key.
+    int loadSeq;
     string? commandMessage;
     bool commandSuccess;
 
@@ -106,11 +112,12 @@
         // masterKey must not be treated as the same form.
         var target = $"{ViewId}|{ObjectKey}|{MasterMember}|{MasterKey}";
         if (target == loadedFor) return;
+        loadedFor = target;   // before the await: a superseded load must not stamp its stale target afterwards
         await Load();
-        loadedFor = target;
     }
 
     async Task Load() {
+        var seq = ++loadSeq;
         loading = true;
         error = null;
         saved = false;
@@ -119,8 +126,10 @@
         memberErrors = new();
         messages = new();
         try {
-            meta = await Api.GetViewAsync(ViewId)
+            var fetched = await Api.GetViewAsync(ViewId)
                 ?? throw new InvalidOperationException($"metadata request for '{ViewId}' failed");
+            if (seq != loadSeq) return;   // superseded while fetching -- discard
+            meta = fetched;
             if (meta.Layout is null) return;
 
             // CRUD-001: there is nothing to fetch for an object that does not exist yet. Seed every laid-out
@@ -136,10 +145,7 @@
                 // what makes the create post it. It is seeded even when the master member is not laid out
                 // on the child's DetailView (OrderItem's is not), which is the normal case: the user
                 // should not have to pick the parent they just clicked "New" inside.
-                if (!string.IsNullOrEmpty(MasterMember) && !string.IsNullOrEmpty(MasterKey)) {
-                    changes[MasterMember] = MasterKey;
-                    if (values.ContainsKey(MasterMember)) values[MasterMember] = MasterKey;
-                }
+                SeedMaster();
                 BuildState();
                 return;
             }
@@ -156,6 +162,7 @@
                 // task-8 finding). Degrade to a scalar-only fetch so one bad lookup can't blank the form.
                 page = await Api.GetPageAsync(meta.ObjectType, new ODataQuery(0, 1, null, filter, null, null));
             }
+            if (seq != loadSeq) return;   // superseded while fetching -- the row belongs to the previous key
 
             if (page.Rows.Length == 0) { error = $"No {meta.ObjectType} found with key {ObjectKey}."; return; }
             var row = page.Rows[0];
@@ -165,9 +172,9 @@
                 .ToDictionary(g => g.Key, g => DetailBinding.ItemValue(row, g.First()));
             BuildState();
         } catch (Exception ex) {
-            error = $"Failed to load detail: {ex.Message}";
+            if (seq == loadSeq) error = $"Failed to load detail: {ex.Message}";
         } finally {
-            loading = false;
+            if (seq == loadSeq) loading = false;   // a superseded load must not un-hide the newer one's form
         }
     }
 
@@ -186,9 +193,11 @@
         saving = true;
         saved = false;
         var payload = new Dictionary<string, object?>(changes);
+        // BUG-010: post to the key the LOADED state belongs to, not the route parameter -- they only differ
+        // mid-navigation, and that is exactly when posting to the route key would hit the wrong record.
         var outcome = IsNew
             ? await Api.CreateAsync(meta!.ObjectType, payload)
-            : await Api.SaveAsync(meta!.ObjectType, ObjectKey, payload);
+            : await Api.SaveAsync(meta!.ObjectType, state!.ObjectKey, payload);
         saving = false;
         // A successful create leaves this component sitting on /new with an object that now exists, so
         // navigate to the real object. Its key came back on the 201 -- the client never generated one.
@@ -202,10 +211,8 @@
             return;
         }
         if (outcome.Success) {
-            saved = true;
-            loadedFor = null;                       // force a full reload of fresh server values
-            await Load();
-            loadedFor = $"{ViewId}|{ObjectKey}|{MasterMember}|{MasterKey}";
+            await Load();                           // full reload of fresh server values; loadedFor already names this target
+            saved = true;                           // after Load, which resets it -- before, "Saved." never showed
         } else {
             memberErrors = outcome.MemberErrors;
             messages = outcome.Messages.ToList();
@@ -229,8 +236,17 @@
         commandMessage = result.Message;
     }
 
+    // CRUD-002's master seed. BUG-014: it must survive Cancel, which clears `changes` but leaves the
+    // new-object form open -- without re-seeding, the next Save created an orphan child.
+    void SeedMaster() {
+        if (!IsNew || string.IsNullOrEmpty(MasterMember) || string.IsNullOrEmpty(MasterKey)) return;
+        changes[MasterMember] = MasterKey;
+        if (values.ContainsKey(MasterMember)) values[MasterMember] = MasterKey;
+    }
+
     void OnCancel() {
         changes.Clear();
+        SeedMaster();
         memberErrors = new();
         messages = new();
         saved = false;

@@ -64,6 +64,15 @@ public class NestedCreateE2ETests : PlaywrightFixture {
             var save = Page.GetByRole(AriaRole.Button,
                 new() { NameRegex = new Regex("^save$", RegexOptions.IgnoreCase) }).First;
             await Expect(save).ToBeEnabledAsync(new() { Timeout = 20000 });
+
+            // BUG-014: Cancel on the new form used to wipe the seeded master along with the user's edits, so
+            // the Save that follows created an orphan. Cancel, then Save -- the association assertion at the
+            // bottom is what catches a regression.
+            var cancel = Page.GetByRole(AriaRole.Button,
+                new() { NameRegex = new Regex("^cancel$", RegexOptions.IgnoreCase) }).First;
+            await Expect(cancel).ToBeEnabledAsync(new() { Timeout = 20000 });
+            await cancel.ClickAsync();
+            await Expect(save).ToBeEnabledAsync(new() { Timeout = 20000 });
             await save.ClickAsync();
 
             // A successful create lands on the new child's own detail view (CRUD-001's behaviour), and it

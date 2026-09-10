@@ -38,34 +38,39 @@ public class ScheduleSyncTests : JobServerTestBase {
         };
 
         try {
+            // Codex review (TEST-004 follow-up): a seed that was ALREADY enabled with a populated NextRunUtc
+            // would satisfy "enable -> non-null" without any reconciliation happening. So: disable and prove
+            // removal first, then enable and prove registration, then disable and prove removal again.
+            await SetAsync(api, id, enabled: false, cron: "0 3 * * *");
+            Assert.IsNull(await PollNextRunUtcAsync(api, id, until: v => v is null),
+                $"NextRunUtc still set {SyncWaitSeconds}s after disabling -- the schedule was not removed");
+
             // Include ParametersJson so the M-4 cron guard doesn't abort the sync tick (docs/DEVIATIONS.md
             // "Dispatch G": an enabled cron row with null ParametersJson makes SyncScheduleByName throw
-            // and NextRunUtc never fills).
-            var enable = await api.PostAsJsonAsync($"api/save/JobDefinition/{id}", new Dictionary<string, object?> {
-                ["CronExpression"] = "0 3 * * *",   // daily 03:00 -- never fires during a test run
-                ["IsEnabled"] = true,
-                ["ParametersJson"] = """{"EmailRecipients":"demo-recipient@xafheadless.local"}""",
-            });
-            Assert.AreEqual(HttpStatusCode.OK, enable.StatusCode,
-                $"enable update failed: {enable.StatusCode} {await enable.Content.ReadAsStringAsync()}");
-
-            var next = await PollNextRunUtcAsync(api, id, until: v => v is not null);
-            Assert.IsNotNull(next,
+            // and NextRunUtc never fills). Daily 03:00 -- never fires during a test run.
+            await SetAsync(api, id, enabled: true, cron: "0 3 * * *");
+            Assert.IsNotNull(await PollNextRunUtcAsync(api, id, until: v => v is not null),
                 $"NextRunUtc stayed null for {SyncWaitSeconds}s -- ScheduleSyncService did not register the recurring job");
+
+            await SetAsync(api, id, enabled: false, cron: "0 3 * * *");
+            Assert.IsNull(await PollNextRunUtcAsync(api, id, until: v => v is null),
+                $"NextRunUtc still set {SyncWaitSeconds}s after disabling -- the schedule was not removed");
         } finally {
             // Restore the snapshot verbatim. Do NOT delete the row -- it is the demo's one real definition.
             var restore = await api.PostAsJsonAsync($"api/save/JobDefinition/{id}", snapshot);
             Assert.AreEqual(HttpStatusCode.OK, restore.StatusCode,
-                $"restore failed -- the seeded definition may still be scheduled! {restore.StatusCode}");
+                $"restore failed -- the seeded definition may be left in the test's state! {restore.StatusCode}");
         }
+    }
 
-        // The seed is disabled, so restoring it must remove the Hangfire schedule -> NextRunUtc nulls on the
-        // next tick. If someone left the seed enabled, that is their schedule and this assertion is moot.
-        if (snapshot["IsEnabled"] is false) {
-            var cleared = await PollNextRunUtcAsync(api, id, until: v => v is null);
-            Assert.IsNull(cleared,
-                $"NextRunUtc still set {SyncWaitSeconds}s after restoring the disabled seed -- the schedule was not removed");
-        }
+    static async Task SetAsync(HttpClient api, string id, bool enabled, string cron) {
+        var resp = await api.PostAsJsonAsync($"api/save/JobDefinition/{id}", new Dictionary<string, object?> {
+            ["CronExpression"] = cron,
+            ["IsEnabled"] = enabled,
+            ["ParametersJson"] = """{"EmailRecipients":"demo-recipient@xafheadless.local"}""",
+        });
+        Assert.AreEqual(HttpStatusCode.OK, resp.StatusCode,
+            $"update (IsEnabled={enabled}) failed: {resp.StatusCode} {await resp.Content.ReadAsStringAsync()}");
     }
 
     static async Task<DateTime?> PollNextRunUtcAsync(HttpClient api, string id, Func<DateTime?, bool> until) {

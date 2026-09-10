@@ -50,7 +50,10 @@ public sealed class EmailOrdersReportHandler(
         await emailService.SendEmailWithAttachmentsAsync(
             command.EmailRecipients,
             $"Report: {rendered.DisplayName}",
-            $"<p>The report <strong>{rendered.DisplayName}</strong> is attached.</p>",
+            // TEST-004: the run id rides in the body so a caller can tell ITS mail from any other to the same
+            // fixed recipient. Scheduled runs have no id (Guid.Empty) and get no line.
+            $"<p>The report <strong>{rendered.DisplayName}</strong> is attached.</p>"
+                + (command.CorrelationId == Guid.Empty ? "" : $"<p style=\"color:#888;font-size:smaller\">Run {command.CorrelationId}</p>"),
             new Dictionary<string, byte[]> { [$"{rendered.DisplayName}.pdf"] = rendered.Pdf });
     }
 }

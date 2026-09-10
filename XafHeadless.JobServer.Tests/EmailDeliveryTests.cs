@@ -42,10 +42,15 @@ public class EmailDeliveryTests : JobServerTestBase {
                 var receivedDate = DateTimeOffset.Parse(m.GetProperty("receivedDate").GetString()!).UtcDateTime;
                 if (receivedDate <= baseline) continue;
                 var to = m.GetProperty("to").EnumerateArray().Select(t => t.GetString());
-                if (to.Contains(Recipient)) { message = m.Clone(); break; }
+                if (!to.Contains(Recipient)) continue;
+                // Codex review (TEST-004 follow-up): THIS run's mail, not any recent mail to the shared recipient
+                // -- the handler writes the run id into the body. smtp4dev serves the rendered HTML at
+                // api/Messages/{id}/html (confirmed live).
+                var html = await smtp.GetStringAsync($"api/Messages/{m.GetProperty("id").GetString()}/html");
+                if (html.Contains(correlationId.ToString(), StringComparison.OrdinalIgnoreCase)) { message = m.Clone(); break; }
             }
         }
-        Assert.IsNotNull(message, $"expected mail to {Recipient} within ~60s -- check the JobServer log / smtp4dev sink");
+        Assert.IsNotNull(message, $"expected mail to {Recipient} carrying run {correlationId} within ~60s -- check the JobServer log / smtp4dev sink");
         StringAssert.Contains(message!.Value.GetProperty("subject").GetString(), "Orders",
             "subject should carry the report's display name");
         Assert.AreEqual(1, message.Value.GetProperty("attachmentCount").GetInt32(),

@@ -55,4 +55,30 @@ public class LookupEditorE2ETests : PlaywrightFixture {
             "the lookup editor must display the object its record references, not an empty box");
         await Shot("lookup001-01-editor-shows-current-value");
     }
+
+    // LOOKUP-003: the editor asked for no page size, so it got the endpoint's DEFAULT (50), not its cap
+    // (200) -- with 51 employees the last one was never selectable. The editor's AutoSearch filters the
+    // page it fetched, so typing the 51st employee's text and finding a match proves the feed carried it.
+    [TestMethod]
+    public async Task OrderDetail_LookupEditor_OffersCandidatesBeyondTheFirstFifty() {
+        using var http = await ApiClientAsync();
+        var resp = await http.GetAsync("api/lookup/Employee?top=200");
+        resp.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        var all = doc.RootElement.EnumerateArray().Select(e => e.GetProperty("Text").GetString()!).ToArray();
+        Assert.IsTrue(all.Length > 50, "the demo's Employee table must exceed the endpoint's default page for this test to prove anything");
+        var beyondDefault = all[^1];
+
+        var key = await OrderKeyWithAnEmployeeAsync();
+        await LoginAsync();
+        await NavigateSpa($"/detail/Order_DetailView/{key}");
+        var combo = Page.GetByRole(AriaRole.Combobox).First;
+        await Expect(combo).ToBeVisibleAsync(new() { Timeout = 20000 });
+
+        await combo.ClickAsync();
+        await combo.FillAsync(beyondDefault);
+        await Expect(Page.GetByRole(AriaRole.Option, new() { Name = beyondDefault, Exact = true }).First)
+            .ToBeVisibleAsync(new() { Timeout = 20000 });
+        await Shot("lookup003-01-candidate-beyond-fifty");
+    }
 }

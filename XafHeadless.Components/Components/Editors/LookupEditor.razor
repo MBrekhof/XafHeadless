@@ -36,10 +36,13 @@
 @code {
     LookupItem[] items = [];
     string? loadError;
+    const int LookupPageSize = 200;   // LookupController.MaxTop
 
     protected override async Task OnInitializedAsync() {
         if (Node.Lookup is not { } lk) { loadError = "no lookup metadata"; return; }
-        items = await Api.GetLookupItemsAsync(lk.ObjectType, key: Current?.ToString());
+        // LOOKUP-003: ask for the endpoint's CAP, not its default (50) -- Employee has 51 rows and Store 200,
+        // so the default silently dropped selectable candidates. Server-side search is LOOKUP-002.
+        items = await Api.GetLookupItemsAsync(lk.ObjectType, key: Current?.ToString(), top: LookupPageSize);
         // An empty feed for a member that HAS a value means the candidates failed to load; showing the raw
         // key beats showing an empty combo that looks like "no value set".
         if (items.Length == 0 && Current is not null) loadError = "candidates unavailable";

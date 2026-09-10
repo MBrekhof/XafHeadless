@@ -31,8 +31,13 @@ public sealed class JobDispatchService(IJobDispatcher dispatcher, ILogger<JobDis
     static EmailOrdersReportCommand Deserialize(string? json) {
         if (string.IsNullOrWhiteSpace(json))
             throw new ArgumentException("EmailRecipients is required.", nameof(json));
-        var command = System.Text.Json.JsonSerializer.Deserialize<EmailOrdersReportCommand>(json)!;
-        if (string.IsNullOrWhiteSpace(command.EmailRecipients))
+        // BUG-015: the JSON text `null` deserialises to a null command (the `!` only silenced the analyser) and
+        // malformed JSON throws JsonException -- both are the same defect as a missing recipient: parameters
+        // that name nobody. One error type, so the caller (and the sync tick) treats them alike.
+        EmailOrdersReportCommand? command;
+        try { command = System.Text.Json.JsonSerializer.Deserialize<EmailOrdersReportCommand>(json); }
+        catch (System.Text.Json.JsonException ex) { throw new ArgumentException($"ParametersJson is not valid JSON: {ex.Message}", nameof(json), ex); }
+        if (command is null || string.IsNullOrWhiteSpace(command.EmailRecipients))
             throw new ArgumentException("EmailRecipients is required.", nameof(json));
         return command;
     }

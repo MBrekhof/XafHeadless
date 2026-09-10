@@ -17,6 +17,8 @@ public class M4RecipientGuardTests {
     [DataRow("{}")]
     [DataRow("""{"EmailRecipients":null}""")]
     [DataRow("""{"EmailRecipients":"  "}""")]
+    [DataRow("null")]                  // BUG-015: deserialises to a null command -- used to NRE past the guard
+    [DataRow("{not json")]             // BUG-015: JsonException, normalised to the same ArgumentException
     public async Task DispatchByNameAsync_throws_when_EmailRecipients_is_missing_or_blank(string? json) {
         var svc = new JobDispatchService(new StubJobDispatcher(), NullLogger<JobDispatchService>.Instance);
         await Assert.ThrowsExactlyAsync<ArgumentException>(

@@ -51,6 +51,108 @@ painful views**, not a replacement for XAF. Cards below whose subject is never a
 direction — [[CHART-001]], [[PIVOT-001]], [[DASH-001]], [[MODEL-001]] — are **Backlog** on the board;
 deprioritised, not refuted. What matters is the list/detail/report path being fast and correct._
 
+### Codex review round (2026-09-10) — correctness batch
+
+_Codex did a static review of the repo at `e02b29c`; 24 findings, each below verified against the code
+before carding. The multi-tenant/security findings are the demo's documented deviations, parked as
+[[SEC-003]] in P3. These are the ones that are simply wrong today._
+
+#### BUG-010: Detail view — a stale load response can overwrite the record the user navigated to, and Save then posts to the new key (ID: 1605)
+
+`XafDetailView.Load()` awaits `Api.GetViewAsync` / the object fetch and then assigns `meta`/`values` with
+no generation check. `OnParametersSetAsync` starts a new Load when `ObjectKey` changes, but does not cancel
+or discard the previous one. Race: load A (Order 1) in flight, navigate to Order 2, A's response lands last
+and overwrites the displayed values; `OnSave` uses the CURRENT `ObjectKey` (Order 2) with changes made
+against Order 1's data. `XafListView` already guards this class of race with a load token; the detail view
+does not.
+
+Fix: capture the target identity (the `loadedFor` string) at Load start, bail after every await if it no
+longer matches, and make Save use the key the loaded state belongs to.
+
+#### BUG-011: Deleting (or retyping) a JobDefinition leaves its Hangfire recurring job registered and firing (ID: 1606)
+
+`ScheduleSyncService.SyncOnce` walks only the JobDefinition rows that exist and calls `SyncScheduleByName`
+per row; removal happens only when an existing supported row is disabled or has an empty cron. Unsupported
+`JobTypeName` rows are skipped with a warning. So: delete an enabled definition via the host-gated DELETE
+route and the recurring job keyed by its JobTypeName stays registered and keeps emailing. Same if the
+JobTypeName is edited to an unsupported value.
+
+Fix: reconcile — after the per-row sync, remove every recurring id in `SupportedJobTypes` that has no
+enabled, cron-bearing definition. One `RecurringJob.RemoveIfExists` per supported name not seen.
+
+#### BUG-012: Enum editor options and grid captions match on the numeric Value while OData sends the Name (ID: 1607)
+
+`ViewMetadataProjector.ProjectEnum` emits `EnumValueMetadata(Value: long, Caption, Name)`. OData serialises
+enum members as the NAME string (`"NeedAssistance"`, `"Awaiting"` — the AppearanceEvaluator tests and
+SaveReferenceAndEnumTests both encode this). But `EnumEditor.razor` builds combo options with
+`Canon(e.Value)` → `"3"` while `Current` is `"NeedAssistance"` → the combo shows blank for any existing
+value; and `GridBinding.EnumCaption` compares `Canonicalize(e.Value)` (`"3"`) with the row's
+`"NeedAssistance"` → never matches, falls back to the raw name instead of the caption.
+`EnumValueCanon`'s comment claims it handles "number or string", but a string NAME is neither.
+
+Fix: match on Name first, Value second, in both places. Add a Components.Tests case with a name-form row
+proving the caption resolves and the editor option matches.
+
+#### LOOKUP-003: The lookup editor never passes `top`, so it gets the endpoint's default 50, not the 200 cap the backlog assumes (ID: 1608)
+
+`LookupEditor.OnInitializedAsync` calls `Api.GetLookupItemsAsync(type, key: Current)` with no `top`.
+`LookupController` has `DefaultTop = 50`, `MaxTop = 200`. [[LOOKUP-002]]'s body says "largest is
+CustomerStore at 200, inside the endpoint's cap" — inside MaxTop, but the editor asks for the default.
+Employee (51 rows) already loses one candidate; Store loses 150. Including the current key repairs display
+of the existing value but does not make the missing candidates selectable.
+
+Fix: pass `top: 200` from the editor; test that a candidate beyond position 50 is in the editor's feed;
+correct LOOKUP-002's premise. Server-side search (LOOKUP-002) remains the real ceiling for large targets.
+
+#### BUG-013: /reports fetches the catalogue in OnInitializedAsync, before the JWT is restored — hard refresh shows an empty list (ID: 1609)
+
+`ListView.razor` and `DetailPage.razor` put the fetching component INSIDE `<AuthGuard>` (GAP-007), so the
+fetch waits for `PersistAuth` to restore the token in `OnAfterRenderAsync`. `Reports.razor` wraps only its
+markup in `AuthGuard` and fetches in the page's own `OnInitializedAsync`, which runs first. On direct URL /
+hard refresh the request goes out without a bearer, gets 401, `CheckUnauthorized` returns an empty list
+(and can clear a token restored in the meantime). No authenticated reload follows.
+
+Fix: same pattern as the other pages — the fetching part becomes a child mounted inside the guard. E2E:
+hard-refresh `/reports` while logged in, assert the catalogue is non-empty.
+
+#### BUG-014: Cancel on a new nested object clears the seeded master key, so a later Save creates an orphan child (ID: 1610)
+
+CRUD-002 seeds the parent association into `changes[MasterMember] = MasterKey` on a `/new` load, precisely
+so the create posts it. `OnCancel()` does `changes.Clear()` and leaves the new-object form open. Save
+afterwards posts only the remaining `changes` — no master. Result: an OrderItem with no Order (or a
+validation failure the user cannot explain).
+
+Fix, one place: factor the seed into `SeedMaster()` called from both Load and OnCancel. Components.Tests
+case: new + master, cancel, assert `changes` still carries the master member.
+
+#### BUG-015: ParametersJson literal `null` slips past the M-4 recipient guard and NREs in JobDispatchService (ID: 1611)
+
+`JobDispatchService.Deserialize` rejects null/whitespace input and a null/empty `EmailRecipients`, but the
+JSON text `null` deserialises to a null command and the `!` only silences the analyser;
+`command.EmailRecipients` then throws NullReferenceException instead of the intended ArgumentException.
+The M-4 comment even names `"null"` as a covered case; `M4RecipientGuardTests` does not test it.
+
+Fix: `?? throw new ArgumentException(...)` on the deserialise result; add `"null"` and malformed JSON to
+M4RecipientGuardTests.
+
+#### TEST-004: JobServer tests assert on "latest global record" and clobber the live JobDefinition — tie them to the dispatched run and restore what they touch (ID: 1612)
+
+This is the flakiness class SESSION_HANDOFF waves off as "environmental" (the `JobExecutionRecord reaches
+Success` family).
+
+- `JobServerTestBase.WaitForNewSuccessAsync` polls `JobExecutionRecord?$orderby=StartedUtc desc&$top=1`
+  and accepts ANY newer Success — a scheduled/manual run from elsewhere satisfies it while the tested
+  dispatch fails, and an unrelated extra record fails it. `ReportRenderTests` then reads the latest global
+  PDF the same way.
+- `ScheduleSyncTests` takes `rows[0]`, overwrites cron + IsEnabled + ParametersJson, and "restores"
+  hardcoded `0 7 * * *`/disabled — ParametersJson is never restored, and the row is the demo's one real
+  definition.
+
+Fix: (a) persist a correlation id on `JobExecutionRecord` (`ReportArtifact` already carries one) and
+assert the exact record/artifact by id; (b) snapshot every property the schedule test changes and restore
+the snapshot in `finally`. Then re-evaluate whether the "three environmental failures" are still
+environmental.
+
 ### Feature-completeness push (2026-08-08)
 
 #### FEAT-000: Feature-completeness roadmap — sequencing and the standing decisions (ID: 1238)
@@ -648,6 +750,24 @@ framework defect — draft ready at [`docs/notes/devexpress-ticket-odata-shared-
 _UI-002 (Modernist theme), DIAG-001 (runtime diagnostics), and BUG-003…BUG-007 (five grid/wire defects, all
 found and fixed 2026-08-08) done — see `docs/DONE.md`. Their two recorded upgrade paths are **GRID-005** and
 **GRID-006** in P1 above._
+
+#### SEC-003: Report rendering and JobDefinition writes are single-tenant by construction — the production gap, stated once (ID: 1613)
+
+Codex review 2026-09-10 (#1, #2, #21, #23). Not a defect in the demo's scope — `docs/DEVIATIONS.md`
+documents it — but the README overclaims, and if [[ARCH-001]]'s growth path ever becomes a real deployment
+this is the first wall.
+
+- `ReportRenderService` hardcodes tenant `company1.com` and logs on as `Admin@company1.com` (ReportsV2
+  data-fill needs an authenticated context). `RenderReportCommand` carries the requester's NAME only, no
+  tenant, no effective permissions. Download is gated on `RequestedBy == caller`, which proves ownership,
+  not authorisation of the contents.
+- `SaveController.OpenWriteContext` grants the host-context object space for `JobDefinition` to any caller
+  whose role `IsAdministrative` — a tenant admin, not a host operator. Definitions are not tenant-owned and
+  their JSON names the email recipients.
+- `ModelDiagnosticsController` returns untrimmed model metadata to any authenticated caller.
+
+Do when: a second tenant exists, or headless goes beyond demo. The README wording ("multi-tenancy enforced
+and tested") is corrected in the 2026-09-10 fix round to say what is actually tested.
 
 #### DIAG-002: Durable log sink / end-to-end correlation — deliberately deferred (ID: 1224)
 

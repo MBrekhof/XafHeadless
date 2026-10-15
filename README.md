@@ -7,7 +7,7 @@ security logic is re-implemented anywhere; the client renders whatever the serve
 
 Everything here runs on **DevExpress 26.1 / .NET 10**, grounded on DevExpress's own **OutlookInspired** demo
 module — so with 26.1 and its demos installed, you can clone, build, and run this standalone, no customer
-database required. The exact patch is pinned in the `.csproj` files (**26.1.4** at time of writing, and the
+database required. The exact patch is pinned in the `.csproj` files (**26.1.5** at time of writing, and the
 version everything below was verified against); prose here says `26.1` because nothing in it depends on the
 patch level.
 
@@ -111,7 +111,7 @@ dotnet test XafHeadless.JobServer.Tests --no-build   # needs Api + JobServer hos
 tries to overwrite the exe the live host has locked and the run fails before a single test executes
 (`MSB3027: … locked by "XafHeadless.JobServer"`). Build the solution first, then start the hosts from
 their built exes (`bin/Debug/net10.0/<Host>.exe --urls http://localhost:<port>`), then test. All four
-suites are green as of 2026-09-10 (Components 114, Api 85, JobServer 20, E2E 21); there are no
+suites are green as of 2026-10-15 (Components 117, Api 91, JobServer 23, E2E 21); there are no
 known-environmental failures.
 
 ![Architecture](docs/architecture.png)
@@ -262,7 +262,7 @@ TODO.md                         ← current backlog (what's built lives in docs/
 XafHeadless.Api/                ← 26.1 multi-tenant Web API host (OutlookInspired demo module, read-only ref)
 XafHeadless.Api.Tests/          ← API integration tests
 XafHeadless.JobServer/          ← UI-less Hangfire worker host: background jobs, report→PDF, email (SVR-001)
-XafHeadless.JobServer.Tests/    ← JobServer integration tests (boot/RunNow/schedule/render/email, keyed on the run's correlation id) + host-free guard/orphan unit tests
+XafHeadless.JobServer.Tests/    ← JobServer integration tests (boot/RunNow/schedule/render/email, keyed on the run's correlation id) + host-free guard/orphan/parameter unit tests
 XafHeadless.Components/         ← RCL: XafListView/XafDetailView, editors, services — the client logic
 XafHeadless.Components.Tests/   ← client unit tests
 XafHeadless.Web/                ← Blazor Web App server host (InteractiveAuto), :5220

@@ -2,9 +2,17 @@
 
 @* DxDateEdit binds via Date/DateChanged (not Value), verified: dxdocs "@bind-Date". *@
 <DxDateEdit T="DateTime?"
-            Date="@(Current as DateTime?)"
-            DateChanged="@((DateTime? v) => Set(v))"
+            Date="@ToDateTime(Current)"
+            DateChanged="@((DateTime? v) => Set(v is { } dt && Node.Editor == "dateonly" ? DateOnly.FromDateTime(dt) : v))"
             ReadOnly="@IsReadOnly" />
 @if (Error is not null) {
     <div class="text-danger small">@Error</div>
+}
+
+@code {
+    static DateTime? ToDateTime(object? v) => v switch {
+        DateTime dt => dt,
+        DateOnly d => d.ToDateTime(TimeOnly.MinValue),
+        _ => null,
+    };
 }

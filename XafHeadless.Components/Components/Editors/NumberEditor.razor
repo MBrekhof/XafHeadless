@@ -5,7 +5,7 @@
    if a member rejects a decimal payload, which SaveController's per-member deserialize would surface. *@
 <DxSpinEdit T="decimal?"
             Value="@ToDecimal(Current)"
-            ValueChanged="@((decimal? v) => Set(v))"
+            ValueChanged="@((decimal? v) => Set(v is { } d && Node.Editor == "int" ? (object?)Convert.ToInt64(Math.Round(d, 0, MidpointRounding.AwayFromZero)) : v))"
             ReadOnly="@IsReadOnly" />
 @if (Error is not null) {
     <div class="text-danger small">@Error</div>

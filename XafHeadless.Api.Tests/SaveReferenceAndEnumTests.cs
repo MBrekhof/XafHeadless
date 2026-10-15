@@ -261,6 +261,94 @@ orderB.ValueKind, "could not find an Order with a different Customer in the firs
         }
     }
 
+    // BUG-016: malformed scalar payloads (e.g. a non-numeric string for a decimal/int member or a
+    // fractional number for an int member) previously threw an unhandled JsonException at
+    // JsonSerializer.Deserialize -> 500. Must return a structured 400 BadRequest.
+    [TestMethod]
+    public async Task SaveController_returns_400_for_malformed_scalar_value() {
+        var client = await GetClientAsync("Admin");
+        var first = await client.GetFromJsonAsync<JsonElement>(
+            $"api/odata/Order?$top=1&$select={KnownModel.OrderKeyMember}");
+        var key = first.GetProperty("value")[0].GetProperty(KnownModel.OrderKeyMember).GetString();
+
+        var resp = await client.PostAsJsonAsync($"api/save/Order/{key}",
+            new Dictionary<string, object?> { ["SaleAmount"] = "not-a-decimal" });
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, resp.StatusCode,
+            $"expected 400, got {resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}");
+    }
+
+    // BUG-016: sending JSON null for a non-nullable value-type member (e.g. Order.SaleAmount : decimal)
+    // previously passed through `if (value.ValueKind == JsonValueKind.Null) mi.SetValue(obj, null)` and
+    // silently reset the field to default(T) (0m) with 200 OK. Must return 400 BadRequest.
+    [TestMethod]
+    public async Task SaveController_returns_400_for_null_on_non_nullable_value_type() {
+        var client = await GetClientAsync("Admin");
+        var first = await client.GetFromJsonAsync<JsonElement>(
+            $"api/odata/Order?$top=1&$select={KnownModel.OrderKeyMember}");
+        var key = first.GetProperty("value")[0].GetProperty(KnownModel.OrderKeyMember).GetString();
+
+        var resp = await client.PostAsJsonAsync($"api/save/Order/{key}",
+            new Dictionary<string, object?> { ["SaleAmount"] = null });
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, resp.StatusCode,
+            $"expected 400, got {resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}");
+    }
+
+    // BUG-016: NumberEditor binds to DxSpinEdit<decimal?>; if a client sends a whole-number decimal token
+    // (e.g. 5.0) for an int member (OrderItem.ProductUnits), System.Text.Json's Int32 converter throws
+    // JsonException -> 500. Whole-number decimals must coerce cleanly to int (200), while genuinely
+    // fractional numbers (5.5) must be rejected with 400 BadRequest (not 500).
+    [TestMethod]
+    public async Task SaveController_int_member_accepts_whole_decimal_and_rejects_fractional_with_400() {
+        var client = await GetClientAsync("Admin");
+        var first = await client.GetFromJsonAsync<JsonElement>(
+            "api/odata/OrderItem?$top=1&$orderby=ID asc&$select=ID,ProductUnits");
+        var row = first.GetProperty("value")[0];
+        var key = row.GetProperty("ID").GetString();
+        var originalUnits = row.GetProperty("ProductUnits").GetInt32();
+        var newUnits = originalUnits + 1;
+
+        using var fractionalContent = new StringContent(
+            $$$"""{"ProductUnits": {{{newUnits}}}.5}""",
+            System.Text.Encoding.UTF8, "application/json");
+        var fractionalResp = await client.PostAsync($"api/save/OrderItem/{key}", fractionalContent);
+        Assert.AreEqual(HttpStatusCode.BadRequest, fractionalResp.StatusCode,
+            $"expected 400 for fractional int, got {fractionalResp.StatusCode}: {await fractionalResp.Content.ReadAsStringAsync()}");
+
+        using var wholeDecimalContent = new StringContent(
+            $$$"""{"ProductUnits": {{{newUnits}}}.0}""",
+            System.Text.Encoding.UTF8, "application/json");
+        var wholeResp = await client.PostAsync($"api/save/OrderItem/{key}", wholeDecimalContent);
+        try {
+            Assert.AreEqual(HttpStatusCode.OK, wholeResp.StatusCode,
+                $"expected 200 for whole decimal on int member, got {wholeResp.StatusCode}: {await wholeResp.Content.ReadAsStringAsync()}");
+            var reread = await client.GetFromJsonAsync<JsonElement>($"api/odata/OrderItem({key})?$select=ProductUnits");
+            Assert.AreEqual(newUnits, reread.GetProperty("ProductUnits").GetInt32());
+        } finally {
+            await client.PostAsJsonAsync($"api/save/OrderItem/{key}",
+                new Dictionary<string, object?> { ["ProductUnits"] = originalUnits });
+        }
+    }
+
+    // BUG-016: an empty `{}` body skips the per-member CanWrite loop in ApplyChanges; a caller without
+    // write permission on the target type must receive 403 Forbidden (JSON), not 200 OK or 404.
+    [TestMethod]
+    public async Task SaveController_empty_body_returns_403_when_caller_lacks_type_write_permission() {
+        var admin = await GetClientAsync("Admin");
+        var first = await admin.GetFromJsonAsync<JsonElement>(
+            $"api/odata/Employee?$top=1&$select={KnownModel.EmployeeKeyMember}");
+        var key = first.GetProperty("value")[0].GetProperty(KnownModel.EmployeeKeyMember).GetString();
+
+        var restricted = await GetClientAsync("Restricted");
+        var resp = await restricted.PostAsJsonAsync($"api/save/Employee/{key}",
+            new Dictionary<string, object?>());
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, resp.StatusCode,
+            $"expected 403, got {resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}");
+        Assert.AreEqual("application/json", resp.Content.Headers.ContentType?.MediaType);
+    }
+
     // OData enum projection may come back as a JSON string (expected, per JsonStringEnumConverter) or,
     // defensively, some other token shape; normalize either way so the test asserts on the value, not
     // on the wire representation.

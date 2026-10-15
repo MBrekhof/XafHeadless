@@ -46,6 +46,7 @@ public class DetailBindingTests {
     [TestMethod]
     public void ValuesEqual_compares_dates_and_bools() {
         Assert.IsTrue(DetailBinding.ValuesEqual(new DateTime(2020, 1, 1), new DateTime(2020, 1, 1)));
+        Assert.IsTrue(DetailBinding.ValuesEqual(new DateTime(2020, 1, 1), new DateOnly(2020, 1, 1)));
         Assert.IsFalse(DetailBinding.ValuesEqual(new DateTime(2020, 1, 1), new DateTime(2021, 1, 1)));
         Assert.IsTrue(DetailBinding.ValuesEqual(true, true));
         Assert.IsFalse(DetailBinding.ValuesEqual(true, false));

@@ -130,6 +130,43 @@ public class ApiClientTests {
         CollectionAssert.Contains(outcome.Messages, "Validation failed.");
     }
 
+    // BUG-016: SaveController returns 409 Conflict with the same { MemberErrors, Messages } shape as 422
+    // on unique-index violations (SVR-003), and 400/403 with { error: "..." } on malformed payloads or
+    // permission denials. FailureOutcomeAsync previously discarded everything except 422.
+    [TestMethod]
+    public async Task SaveAsync_and_CreateAsync_surface_messages_on_409_conflict() {
+        const string conflictBody = """
+            {"MemberErrors":{},"Messages":["The value violates a uniqueness constraint (a record with the same key already exists)."]}
+            """;
+        var client = Client(HttpStatusCode.Conflict, conflictBody);
+
+        var saveOutcome = await client.SaveAsync("JobDefinition", "k1", new Dictionary<string, object?>());
+        var createOutcome = await client.CreateAsync("JobDefinition", new Dictionary<string, object?>());
+
+        Assert.IsFalse(saveOutcome.Success);
+        CollectionAssert.Contains(saveOutcome.Messages,
+            "The value violates a uniqueness constraint (a record with the same key already exists).");
+        Assert.IsFalse(createOutcome.Success);
+        CollectionAssert.Contains(createOutcome.Messages,
+            "The value violates a uniqueness constraint (a record with the same key already exists).");
+    }
+
+    [TestMethod]
+    public async Task SaveAsync_surfaces_server_error_message_on_400_and_403() {
+        var badRequestClient = Client(HttpStatusCode.BadRequest,
+            """{"error":"Invalid value for member 'SaleAmount' on type 'Order'."}""");
+        var forbiddenClient = Client(HttpStatusCode.Forbidden,
+            """{"error":"Write denied for member 'PONumber'."}""");
+
+        var badOutcome = await badRequestClient.SaveAsync("Order", "k1", new Dictionary<string, object?>());
+        var forbiddenOutcome = await forbiddenClient.SaveAsync("Order", "k1", new Dictionary<string, object?>());
+
+        Assert.IsFalse(badOutcome.Success);
+        CollectionAssert.Contains(badOutcome.Messages, "Invalid value for member 'SaleAmount' on type 'Order'.");
+        Assert.IsFalse(forbiddenOutcome.Success);
+        CollectionAssert.Contains(forbiddenOutcome.Messages, "Write denied for member 'PONumber'.");
+    }
+
     [TestMethod]
     public async Task GetPageAsync_failure_names_the_request_and_the_servers_own_reason() {
         // The real 400 body this host returns for an instant-literal date filter (see

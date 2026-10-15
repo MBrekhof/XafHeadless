@@ -20,9 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DevExpress.ExpressApp.WebApi" Version="26.1.4" />
+    <PackageReference Include="DevExpress.ExpressApp.WebApi" Version="26.1.5" />
     <!-- Adds AddMultiTenancy() to the standalone Web API application builder (IWebApiApplicationBuilder). -->
-    <PackageReference Include="DevExpress.ExpressApp.MultiTenancy.WebApi.EFCore" Version="26.1.4" />
+    <PackageReference Include="DevExpress.ExpressApp.MultiTenancy.WebApi.EFCore" Version="26.1.5" />
     <PackageReference Include="Microsoft.AspNetCore.OData" Version="9.3.2" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <!-- XAF EF Core resolves design-time services at runtime in a headless host (matches the DevExpress

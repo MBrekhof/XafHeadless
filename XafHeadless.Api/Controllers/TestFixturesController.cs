@@ -124,6 +124,10 @@ public class TestFixturesController : ControllerBase {
             // Deny, not an Allow, to give the DELETE route's CanDelete gate a real 403 case. Ensured
             // UNCONDITIONALLY, same as Write:Allow (AddTypePermission never duplicates rows).
             role.AddTypePermission<Order>(Delete, Deny);
+            // BUG-016: same finding for Create -- when left unspecified on Order's TypePermissionObject,
+            // CanCreate(typeof(Order), os) evaluates GetObjectCriteriaCore and defaults to Allow unless
+            // explicitly set to Deny.
+            role.AddTypePermission<Order>(Create, Deny);
             var user = os.FirstOrDefault<ApplicationUser>(u => u.UserName == RestrictedUserName);
             if (user is null) {
                 user = os.CreateObject<ApplicationUser>();

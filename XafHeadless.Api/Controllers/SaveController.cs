@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using System.Text.Json;
 using OutlookInspiredDemo.Module.BusinessObjects;
 using XafHeadless.JobServer.BusinessObjects;
@@ -95,6 +96,14 @@ public class SaveController : ControllerBase {
         }
         var obj = os.GetObjectByKey(clrType, routeKey);
         if (obj is null) return NotFound();
+        // BUG-016: an empty `{}` body skips the per-member CanWrite loop in ApplyChanges. Note that on
+        // PermissionPolicyRole, CanWrite(os, obj) (without a memberName) evaluates GetObjectCriteriaCore,
+        // which only denies when an explicit Write:Deny exists on the TypePermissionObject, whereas
+        // per-member CanWrite(clrType, os, memberName) default-denies when no Write:Allow exists. Check
+        // both so a caller with no write access to any member of `clrType` receives 403 even on `{}`.
+        if (changes.Count == 0 && ctx.Security is not null
+            && (!ctx.Security.CanWrite(os, obj) || !HasAnyWritableMember(typeInfo, clrType, os, ctx.Security)))
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = $"Write denied for '{type}'." });
         var applyError = ApplyChanges(os, typeInfo, obj, changes, ctx.Security);
         if (applyError is not null) return applyError;
         var commitError = CommitWithValidation(os);
@@ -115,6 +124,13 @@ public class SaveController : ControllerBase {
         using var scope = ctx.Scope;
         using var os = ctx.ObjectSpace;
         var typeInfo = os.TypesInfo.FindTypeInfo(clrType);
+        // BUG-016: check type-level Create permission up front (IsGrantedExtensions.CanCreate(security,
+        // Type, IObjectSpace), verified non-obsolete in IsGrantedExtensions.cs:289) plus member write
+        // capability so a caller without Create permission receives SaveController's structured 403 JSON
+        // contract even on an empty `{}` body.
+        if (ctx.Security is not null
+            && (!ctx.Security.CanCreate(clrType, os) || !HasAnyWritableMember(typeInfo, clrType, os, ctx.Security)))
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = $"Create denied for '{type}'." });
         var obj = os.CreateObject(clrType);
         var applyError = ApplyChanges(os, typeInfo, obj, changes, ctx.Security);
         if (applyError is not null) return applyError;
@@ -182,6 +198,9 @@ public class SaveController : ControllerBase {
         return null;
     }
 
+    static bool HasAnyWritableMember(ITypeInfo typeInfo, Type clrType, IObjectSpace os, IRequestSecurityStrategy security) =>
+        typeInfo.Members.Any(m => m.IsPersistent && !m.IsKey && !m.IsList && security.CanWrite(clrType, os, m.Name));
+
     // Extracted per-member write loop (GAP-003): identical reference/enum/scalar resolution and
     // identical 400 behavior for both Save (update) and Create -- do not duplicate this loop.
     // Returns a non-null IActionResult on any short-circuit -- 400 on an unknown/non-writable member,
@@ -214,7 +233,12 @@ public class SaveController : ControllerBase {
             if (security is not null && !security.CanWrite(typeInfo.Type, os, member)) {
                 return new ObjectResult(new { error = $"Write denied for member '{member}'." }) { StatusCode = StatusCodes.Status403Forbidden };
             }
-            if (value.ValueKind == JsonValueKind.Null) { mi.SetValue(obj, null); continue; }
+            if (value.ValueKind == JsonValueKind.Null) {
+                if (mi.MemberType.IsValueType && Nullable.GetUnderlyingType(mi.MemberType) is null)
+                    return new BadRequestObjectResult(new { error = $"Member '{member}' on type '{typeInfo.Type.Name}' does not accept null." });
+                mi.SetValue(obj, null);
+                continue;
+            }
             // Reference (lookup) member detection -- VERIFIED against installed 26.1 source, not memory:
             // IMemberInfo (DevExpress.ExpressApp/DC/IMemberInfo.cs) has NO "ReferenceType" member at all --
             // that candidate does not exist on this interface (grepped the whole DevExpress.ExpressApp source
@@ -239,9 +263,44 @@ public class SaveController : ControllerBase {
                 mi.SetValue(obj, referenced);
                 continue;
             }
-            mi.SetValue(obj, JsonSerializer.Deserialize(value.GetRawText(), mi.MemberType));
+            if (!TryDeserializeScalar(value, mi.MemberType, out var scalarValue)) {
+                return new BadRequestObjectResult(new { error = $"Invalid value for member '{member}' on type '{typeInfo.Type.Name}'." });
+            }
+            mi.SetValue(obj, scalarValue);
         }
         return null;
+    }
+
+    static bool TryDeserializeScalar(JsonElement value, Type memberType, out object? result) {
+        var targetType = Nullable.GetUnderlyingType(memberType) ?? memberType;
+        try {
+            if (targetType == typeof(DateOnly) && value.ValueKind == JsonValueKind.String && value.GetString() is { } dateStr) {
+                if (DateOnly.TryParseExact(dateStr, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)) {
+                    result = d;
+                    return true;
+                }
+                if (DateTime.TryParse(dateStr, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt)) {
+                    result = DateOnly.FromDateTime(dt);
+                    return true;
+                }
+                result = null;
+                return false;
+            }
+            if ((targetType == typeof(int) || targetType == typeof(long) || targetType == typeof(short) || targetType == typeof(byte)) &&
+                value.ValueKind == JsonValueKind.Number) {
+                if (value.TryGetDecimal(out var dec) && dec == Math.Truncate(dec)) {
+                    result = Convert.ChangeType(dec, targetType, CultureInfo.InvariantCulture);
+                    return true;
+                }
+                result = null;
+                return false;
+            }
+            result = JsonSerializer.Deserialize(value.GetRawText(), memberType);
+            return true;
+        } catch (Exception e) when (e is JsonException or FormatException or OverflowException or InvalidCastException) {
+            result = null;
+            return false;
+        }
     }
 
     // Shared Committing/IValidator wiring + CommitChanges/422 handling -- identical for Save and

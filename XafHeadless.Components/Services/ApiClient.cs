@@ -223,18 +223,30 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return await FailureOutcomeAsync(response);
     }
 
-    // The failure contract BOTH write paths share (docs/notes/save-contract.md): a 422 carries
-    // MemberErrors keyed by member name, for display at the offending editor, plus whole-object Messages.
-    // Anything else is an unexpected status and says so rather than pretending to be a validation result.
+    // The failure contract BOTH write paths share (docs/notes/save-contract.md): 422 and 409 carry
+    // MemberErrors keyed by member name, for display at the offending editor, plus whole-object Messages;
+    // 400 and 403 carry { error: "..." }. Anything else falls back to naming the HTTP status.
     static async Task<SaveOutcome> FailureOutcomeAsync(HttpResponseMessage response) {
-        if (response.StatusCode != HttpStatusCode.UnprocessableEntity)
-            return new SaveOutcome(false, new(), [$"Unexpected status {(int)response.StatusCode}."]);
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var memberErrors = body.GetProperty("MemberErrors").EnumerateObject()
-            .ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
-        var messages = body.GetProperty("Messages").EnumerateArray()
-            .Select(m => m.GetString() ?? "").ToArray();
-        return new SaveOutcome(false, memberErrors, messages);
+        try {
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            if (body.ValueKind == JsonValueKind.Object) {
+                if (body.TryGetProperty("MemberErrors", out var me) && me.ValueKind == JsonValueKind.Object &&
+                    body.TryGetProperty("Messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array) {
+                    var memberErrors = me.EnumerateObject()
+                        .ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
+                    var messages = msgs.EnumerateArray()
+                        .Select(m => m.GetString() ?? "").ToArray();
+                    return new SaveOutcome(false, memberErrors, messages);
+                }
+                if (body.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.String &&
+                    err.GetString() is { Length: > 0 } errMsg) {
+                    return new SaveOutcome(false, new(), [errMsg]);
+                }
+            }
+        } catch (JsonException) {
+            // Non-JSON error body falls through to the status-code fallback below.
+        }
+        return new SaveOutcome(false, new(), [$"Unexpected status {(int)response.StatusCode}."]);
     }
 
     public async Task<CommandResult> ExecuteCommandAsync(string id, string[] keys) {

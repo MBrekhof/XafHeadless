@@ -1,5 +1,14 @@
 # XafHeadless — DONE
 
+#### BUG-016: Scalar save hardening, Create/empty-body Save permission gates, and ApiClient 409/400/403 error extraction (ID: 2187)
+
+**Done 2026-10-15.** Fixed the four save/error-handling gaps identified in the 2026-10-15 repo review, plus aligned the solution's DevExpress NuGet pins (`26.1.4` → `26.1.5`) with the installed demo module:
+- **Client editors & dirty-tracking:** `DateEditor.razor` now emits `DateOnly` when `Node.Editor == "dateonly"` (and accepts `DateOnly` in `ToDateTime`); `DetailBinding.Normalize` normalizes `DateOnly` to `DateTime` so unchanged `dateonly` fields do not falsely mark the form dirty; `NumberEditor.razor` coerces `decimal?` to `long` when `Node.Editor == "int"`.
+- **Client `ApiClient.FailureOutcomeAsync`:** Now parses `{ MemberErrors, Messages }` on both `422 UnprocessableEntity` and `409 Conflict` (surfacing `SVR-003` unique-constraint messages in `XafDetailView`), and extracts `{ error }` on `400 BadRequest` / `403 Forbidden` with a graceful fallback when the body is empty or non-JSON.
+- **Server `SaveController` scalar & null guards:** `ApplyChanges` rejects `JsonValueKind.Null` on non-nullable value-type members with `400 BadRequest` instead of silently resetting to `default(T)`, and `TryDeserializeScalar` handles `DateOnly` strings (both `"yyyy-MM-dd"` and ISO `DateTime` strings), whole-number decimals (`5.0`) on integer members (`int`/`long`/`short`/`byte`), and catches `JsonException`/`FormatException`/`OverflowException`/`InvalidCastException` as `400 BadRequest` instead of an unhandled `500`.
+- **Server `SaveController.Create` and empty-body `Save` permission gates:** `Create` checks `CanCreate(clrType, os)` and `HasAnyWritableMember` up front before `CreateObject`/`CommitChanges`; `Save` checks `CanWrite(os, obj)` and `HasAnyWritableMember` when `changes.Count == 0`. `TestFixturesController.EnsureRestrictedRole` also sets explicit `Create:Deny` on `Order` alongside `Delete:Deny`.
+- **Tests:** 5 new tests in `XafHeadless.Components.Tests` (`ApiClientTests`, `DetailBindingTests`) — 116/116 green; 5 new tests in `XafHeadless.Api.Tests` (`SaveReferenceAndEnumTests`, `SaveCreateTests`) — 90/90 green.
+
 #### Codex review round 2026-09-10: BUG-010…BUG-015, LOOKUP-003, TEST-004 (IDs 1605–1612)
 
 **Done 2026-09-10.** Codex reviewed `e02b29c` (24 findings); nine were carded after each was verified in

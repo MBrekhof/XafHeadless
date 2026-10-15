@@ -26,6 +26,7 @@ public static class DetailBinding {
     static object? Normalize(object? v) => v switch {
         null => null,
         string s => s.Length == 0 ? null : s,
+        DateOnly d => d.ToDateTime(TimeOnly.MinValue),
         bool or DateTime => v,
         _ => TryDecimal(v, out var d) ? d : v,
     };

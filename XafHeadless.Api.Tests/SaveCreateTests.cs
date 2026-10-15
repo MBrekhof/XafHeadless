@@ -73,4 +73,25 @@ public class SaveCreateTests : TestBase {
             $"api/odata/Employee?$filter=FirstName eq '{marker}'&$select={KnownModel.EmployeeKeyMember}");
         Assert.AreEqual(0, check.GetProperty("value").GetArrayLength(), "invalid create must not have persisted");
     }
+
+    // BUG-016: SaveController.Create previously checked only per-member CanWrite inside ApplyChanges and
+    // never checked CanCreate(clrType, os). For a caller like Restricted (which has Write:Allow on Order
+    // but no Create grant), Create either bypassed ApplyChanges on `{}` or passed per-member CanWrite and
+    // then failed at CommitChanges with XAF's raw text/plain security message instead of SaveController's
+    // structured 403 JSON contract.
+    [TestMethod]
+    public async Task Create_Order_returns_403_json_when_caller_lacks_create_permission() {
+        var restricted = await GetClientAsync("Restricted");
+
+        var resp = await restricted.PostAsJsonAsync("api/save/Order", new Dictionary<string, object?>());
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, resp.StatusCode,
+            $"expected 403, got {resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}");
+        Assert.AreEqual("application/json", resp.Content.Headers.ContentType?.MediaType,
+            "403 must be SaveController's own structured JSON error, not the framework's raw-text commit-time message");
+        var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        var err = body.GetProperty("error").GetString();
+        Assert.IsNotNull(err);
+        StringAssert.Contains(err, "Order");
+    }
 }

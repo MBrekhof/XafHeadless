@@ -44,6 +44,19 @@ the members as `DateTimeOffset` in the EDM, or configure the OData query binder 
 literal compares against a CLR `DateTime`. Both are Api-host changes; measure before choosing, and keep the
 `date()` path as the fallback for hosts that cannot change their EDM.
 
+_BUG-016 (scalar save crashes on DateOnly/decimal-to-int/null value types, empty-body Create/Save permission bypass, and ApiClient dropping 409/400/403 error payloads) fixed 2026-10-15 — see `docs/DONE.md`._
+
+#### BUG-017: ReportRenderService.ApplyParameters crashes on Enum/DateOnly parameters, and ReportsController.Collect returns 202 forever when a report job fails (ID: 2188)
+
+Review finding (2026-10-15, unverified — reproduce with tests first):
+- `ReportsController.HintFor` (`ReportsController.cs:93-102`) projects `"enum"` and `"dateonly"` parameter hints, and `ReportsPanel.razor` renders an enum picker, but `ReportRenderService.ApplyParameters` (`ReportRenderService.cs:88-103`) uses `Convert.ChangeType(raw, target, CultureInfo.InvariantCulture)`, which throws `InvalidCastException` for any `Enum` or `DateOnly` parameter type.
+- When a report job fails in Hangfire (e.g., bad parameter or criteria), `JobExecutor` marks `JobExecutionRecord.Status = JobRunStatus.Failed` and writes no `ReportArtifact`. `ReportsController.Collect` (`ReportsController.cs:151-162`) only checks `ReportArtifact` and returns `202 Accepted` when none exists, causing `ReportsPanel.razor` to poll for the full 60 seconds and report a timeout instead of surfacing the failure from `JobExecutionRecord`.
+
+#### BUG-018: Unescaped/unquoted keys in DetailBinding.KeyFilter and GridBinding.BuildMasterFilter break string keys and allow OData $filter injection (ID: 2189)
+
+Review finding (2026-10-15, unverified — reproduce with unit tests first):
+`DetailBinding.KeyFilter` (`DetailBinding.cs:114`) and `GridBinding.BuildMasterFilter` (`GridBinding.cs:279-286`) format keys into OData `$filter` raw (`$"{keyMember} eq {key}"`) without quoting string keys or validating/escaping GUID/numeric keys. A string primary key fails with an OData 400 syntax error, and a crafted route parameter (e.g. `00000000-0000-0000-0000-000000000000 or true`) injects arbitrary OData `$filter` expressions.
+
 ## P2: Medium — platform breadth
 
 _**Direction set 2026-08-09: [[ARCH-001]]** (`docs/DONE.md`). Headless is a **growth path for individual
@@ -615,7 +628,30 @@ lookup editor was that consumer, so the two were built together._
 _P2 status: **GAP-002 / GAP-004 / GAP-005 / GAP-007 / GAP-009** done (see `docs/DONE.md`); **PH2-003** closed
 as a decision (moved to `docs/DONE.md`); **PH2-005** deferred (YAGNI, owner-reviewed). **Still open above:**
 **GAP-010** — the client Link/Unlink UI, its server half shipped — and **MIG-002**, a planning artifact with
-no code. Below is P3 hardening._
+no code. Below are the 2026-10-15 review findings and P3 hardening._
+
+#### BUG-019: ModelController.GetView 404s on cloned DetailViews with suffixes, and ViewMetadataProjector suppresses Required on value types (ID: 2190)
+
+Review finding (2026-10-15, unverified — reproduce with tests first):
+- `ModelController.GetView` (`ModelController.cs:17-22`) dispatches via `viewId.EndsWith("_DetailView", StringComparison.Ordinal)` instead of checking `model.Views[viewId] is IModelDetailView`. Any cloned DetailView with a suffix (e.g. `Quote_DetailView_Pivot`) routes to `ProjectListView` and returns 404.
+- `ViewMetadataProjector.ProjectDetailView` (`ViewMetadataProjector.cs:116`) computes `Required: !mi.MemberTypeInfo?.Type.IsValueType == true && IsRequired(pe)`, which suppresses `Required = true` on all value types (`DateTime`, `decimal`, `int`, `Guid`) even when decorated with `[RuleRequiredField]`.
+
+#### BUG-020: LookupController truncates before sorting (SetTopReturnedObjectsCount without Sorting), and LookupEditor only loads in OnInitializedAsync (ID: 2191)
+
+Review finding (2026-10-15, unverified — reproduce with tests first):
+- `LookupController.GetItems` (`LookupController.cs:85-96`) truncates to `take + 1` rows via `os.SetTopReturnedObjectsCount(candidates, take + 1)` with no `Sorting` applied to the collection, and only sorts that truncated subset in memory (`items.OrderBy(i => i.Text)`). For any lookup target with more rows than `take`, the returned page is not the alphabetically first `take` items.
+- `LookupEditor.razor` (`LookupEditor.razor:41-49`) only fetches items in `OnInitializedAsync()`, not `OnParametersSetAsync()`, so if `Current` changes on an existing component instance to a key outside the initial page, the newly selected item is not fetched.
+
+#### BUG-021: ScheduleSyncService unhandled CronFormatException aborts the sync loop, and Login.razor fires duplicate navigation fetches on login (ID: 2192)
+
+Review finding (2026-10-15, unverified — reproduce with tests first):
+- `JobDefinition.CronExpression` has no cron format validation on save, and `ScheduleSyncService.SyncOnce` (`ScheduleSyncService.cs:42-51`) calls `dispatcher.Schedule(def.JobTypeName, def.CronExpression, ...)` inside a `foreach` loop without a per-row `try/catch`. One invalid cron expression throws `CronFormatException` and aborts the entire sync pass (including orphan removal) every 15 seconds.
+- `Login.razor` (`Login.razor:38-66`) calls `Api.LoginAsync`, which calls `authState.SetToken(token)` and synchronously fires `AuthState.Changed` -> `RedirectIfAuthenticated()` -> `InvokeAsync(NavigateToFirstItemAsync)`, and then `OnLoginClick()` awaits `NavigateToFirstItemAsync()` a second time, issuing duplicate `GET api/model/navigation` and `NavigateTo` calls on every login.
+
+#### SEC-004: NonPersistentController omits IRequestSecurityStrategy.CanRead type and member checks (ID: 2193)
+
+Review finding (2026-10-15, unverified — reproduce with tests first):
+`NonPersistentController.Get` (`NonPersistentController.cs:36-82`) returns all rows and all public scalar properties of registered non-persistent types without checking `security.CanRead(typeInfo.Type, os)` or `security.CanRead(typeInfo.Type, os, member.Name)`. Even when `ViewMetadataProjector` hides denied columns from the ListView metadata, `GET /api/nonpersistent/{viewId}` still serializes every property on the class.
 
 ## P3: Low — hardening/consolidation
 
@@ -664,7 +700,9 @@ this is the first wall.
 - `ReportRenderService` hardcodes tenant `company1.com` and logs on as `Admin@company1.com` (ReportsV2
   data-fill needs an authenticated context). `RenderReportCommand` carries the requester's NAME only, no
   tenant, no effective permissions. Download is gated on `RequestedBy == caller`, which proves ownership,
-  not authorisation of the contents.
+  not authorisation of the contents. *(2026-10-15 note: even within the single demo tenant `company1.com`,
+  logging on as `Admin@company1.com` lets a restricted user render any report — including with custom
+  `criteria` — and read rows/members denied by XAF security.)*
 - `SaveController.OpenWriteContext` grants the host-context object space for `JobDefinition` to any caller
   whose role `IsAdministrative` — a tenant admin, not a host operator. Definitions are not tenant-owned and
   their JSON names the email recipients.

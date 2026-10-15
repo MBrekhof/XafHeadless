@@ -85,7 +85,7 @@ public sealed class ReportRenderService(
                 string.IsNullOrWhiteSpace(reportData.DisplayName) ? predefinedReportTypeName : reportData.DisplayName);
         });
 
-    static void ApplyParameters(DevExpress.XtraReports.UI.XtraReport report,
+    public static void ApplyParameters(DevExpress.XtraReports.UI.XtraReport report,
             Dictionary<string, string?>? parameters) {
         if (parameters is null || parameters.Count == 0) return;
         foreach (var (name, raw) in parameters) {
@@ -95,10 +95,27 @@ public sealed class ReportRenderService(
             if (parameter is null) continue;                 // stale client naming a removed parameter
             if (string.IsNullOrWhiteSpace(raw)) continue;    // "leave the report's own default alone"
             var target = Nullable.GetUnderlyingType(parameter.Type) ?? parameter.Type;
-            parameter.Value = target == typeof(Guid)
-                ? Guid.Parse(raw)                            // ChangeType cannot do Guid
-                : Convert.ChangeType(raw, target, System.Globalization.CultureInfo.InvariantCulture);
+            parameter.Value = ConvertParameterValue(raw, target);
         }
+    }
+
+    static object ConvertParameterValue(string raw, Type target) {
+        if (target == typeof(Guid))
+            return Guid.Parse(raw);                          // ChangeType cannot do Guid
+        if (target.IsEnum) {
+            var parsed = Enum.Parse(target, raw, ignoreCase: true);
+            if (!target.IsDefined(typeof(FlagsAttribute), inherit: false) && !Enum.IsDefined(target, parsed))
+                throw new FormatException($"'{raw}' is not a defined value of enum '{target.Name}'.");
+            return parsed;
+        }
+        if (target == typeof(DateOnly)) {
+            if (DateOnly.TryParseExact(raw, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+                return d;
+            if (DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+                return DateOnly.FromDateTime(dt);
+            return DateOnly.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return Convert.ChangeType(raw, target, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // Authenticate the child scope's security strategy as the tenant admin so the report data-fill's

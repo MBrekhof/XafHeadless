@@ -129,7 +129,7 @@
         parameterNodes = parameters
             .Select(p => new LayoutNode("item", p.Caption, p.Name, p.Editor,
                 AllowWrite: true, Required: false, MaxLength: null, ViewId: null, MasterKeyMember: null,
-                Lookup: null, Enum: null, Children: null))
+                Lookup: null, Enum: p.Enum, Children: null))
             .ToArray();
         paramState = new DetailViewState {
             Values = paramValues,
@@ -158,6 +158,7 @@
     static string? Format(object? value) => value switch {
         null => null,
         DateTime d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        DateOnly d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
         _ => value.ToString(),
     };
@@ -180,10 +181,14 @@
 
         for (var attempt = 0; attempt < MaxPolls; attempt++) {
             var result = await Api.CollectReportAsync(correlationId.Value);
-            if (result is { } file) {
-                using var stream = new MemoryStream(file.Content);
+            if (!result.Pending) {
+                if (result.Error is not null || result.Content is null) {
+                    Fail($"“{report.Name}” failed: {result.Error ?? "unknown error"}");
+                    return;
+                }
+                using var stream = new MemoryStream(result.Content);
                 using var streamRef = new DotNetStreamReference(stream);
-                await JS.InvokeVoidAsync("downloadFileFromStream", file.FileName, streamRef, file.ContentType);
+                await JS.InvokeVoidAsync("downloadFileFromStream", result.FileName, streamRef, result.ContentType);
                 running = null;
                 status = $"“{report.Name}” downloaded.";
                 return;
@@ -192,8 +197,7 @@
         }
 
         // The job may still finish later; saying so is more useful than declaring a failure that may not
-        // have happened. A render rejected for a bad parameter value ends here too -- the worker fails the
-        // job rather than quietly rendering with the default.
+        // have happened.
         Fail($"“{report.Name}” is taking longer than expected — it may still finish in the background.");
     }
 

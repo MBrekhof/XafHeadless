@@ -6,4 +6,9 @@ namespace XafHeadless.Components.Contracts;
 // Editor uses the same vocabulary ClassifyDataType emits for a DetailView item, which is the point: the
 // parameter form renders through the editors this client already has rather than a parallel set.
 // DefaultValue is the report's own, as a string -- the server converts it back to the declared CLR type.
-public record ReportParameter(string Name, string Caption, string Editor, string? DefaultValue);
+public record ReportParameter(
+    string Name,
+    string Caption,
+    string Editor,
+    string? DefaultValue,
+    List<EnumValueMetadata>? Enum = null);

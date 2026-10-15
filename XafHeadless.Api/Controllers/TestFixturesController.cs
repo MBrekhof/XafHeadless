@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using OutlookInspiredDemo.Module.BusinessObjects;
+using XafHeadless.JobServer.BusinessObjects;
 using static DevExpress.ExpressApp.Security.SecurityOperations;
 using static DevExpress.Persistent.Base.SecurityPermissionState;
 
@@ -68,10 +69,12 @@ public class TestFixturesController : ControllerBase {
     };
 
     readonly IObjectSpaceFactory objectSpaceFactory;
+    readonly IServiceScopeFactory scopeFactory;
     readonly ISecurityStrategyBase security;
     readonly IWebHostEnvironment environment;
-    public TestFixturesController(IObjectSpaceFactory objectSpaceFactory, ISecurityStrategyBase security, IWebHostEnvironment environment) {
+    public TestFixturesController(IObjectSpaceFactory objectSpaceFactory, IServiceScopeFactory scopeFactory, ISecurityStrategyBase security, IWebHostEnvironment environment) {
         this.objectSpaceFactory = objectSpaceFactory;
+        this.scopeFactory = scopeFactory;
         this.security = security;
         this.environment = environment;
     }
@@ -162,6 +165,45 @@ public class TestFixturesController : ControllerBase {
         if (obj is null) return NotFound();
 
         os.Delete(obj); // verified: void Delete(Object obj) on IObjectSpace (IObjectSpace.cs)
+        os.CommitChanges();
+        return Ok();
+    }
+
+    // BUG-017: seed/clean up a failed JobExecutionRecord in the host DB so ReportsTests can verify
+    // ReportsController.Collect returns 422 instead of 202 when a background report run fails, without
+    // requiring a live JobServer worker. Same env+admin double-gate as EnsureRestrictedRole.
+    [HttpPost("failed-report-run/{correlationId:guid}")]
+    public IActionResult CreateFailedReportRun(Guid correlationId) {
+        if (!environment.IsDevelopment()) return NotFound();
+        if (security.User is not PermissionPolicyUser caller || !caller.Roles.Any(r => r.IsAdministrative)) return Forbid();
+
+        using var scope = scopeFactory.CreateScope();
+        using var os = scope.ServiceProvider.GetRequiredService<INonSecuredObjectSpaceFactory>()
+            .CreateNonSecuredObjectSpace(typeof(JobExecutionRecord));
+        var record = os.CreateObject<JobExecutionRecord>();
+        record.CorrelationId = correlationId;
+        record.JobName = "RenderReportCommand";
+        record.JobTypeName = "RenderReport";
+        record.StartedUtc = DateTime.UtcNow;
+        record.CompletedUtc = DateTime.UtcNow;
+        record.Status = JobRunStatus.Failed;
+        record.ErrorMessage = "System.FormatException: 'bad-param' is not a valid parameter value.\r\n   at XafHeadless.JobServer.Reports.ReportRenderService.ApplyParameters";
+        os.CommitChanges();
+        return Ok();
+    }
+
+    [HttpDelete("failed-report-run/{correlationId:guid}")]
+    public IActionResult DeleteFailedReportRun(Guid correlationId) {
+        if (!environment.IsDevelopment()) return NotFound();
+        if (security.User is not PermissionPolicyUser caller || !caller.Roles.Any(r => r.IsAdministrative)) return Forbid();
+
+        using var scope = scopeFactory.CreateScope();
+        using var os = scope.ServiceProvider.GetRequiredService<INonSecuredObjectSpaceFactory>()
+            .CreateNonSecuredObjectSpace(typeof(JobExecutionRecord));
+        var records = os.GetObjects<JobExecutionRecord>()
+            .Where(r => r.CorrelationId == correlationId)
+            .ToList();
+        foreach (var r in records) os.Delete(r);
         os.CommitChanges();
         return Ok();
     }

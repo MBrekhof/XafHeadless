@@ -47,6 +47,29 @@ public class ReportsTests : TestBase {
         Assert.AreEqual(HttpStatusCode.Accepted, response.StatusCode);
     }
 
+    // BUG-017: when a background report run fails (JobExecutionRecord.Status == Failed), Collect must
+    // return 422 with the error rather than 202 Accepted forever (which made the client poll for 60s
+    // and report a false timeout).
+    [TestMethod]
+    public async Task Collecting_a_run_whose_job_failed_returns_422_with_error_instead_of_202_pending() {
+        var client = await GetClientAsync("Admin");
+        var correlationId = Guid.NewGuid();
+        var seed = await client.PostAsync($"api/test-fixtures/failed-report-run/{correlationId}", null);
+        Assert.AreEqual(HttpStatusCode.OK, seed.StatusCode);
+        try {
+            var response = await client.GetAsync($"api/reports/runs/{correlationId}");
+            Assert.AreEqual(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var error = body.GetProperty("error").GetString();
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "bad-param");
+            Assert.DoesNotContain("at XafHeadless", error, "only the first line of ErrorMessage should be returned, not the stack trace");
+        }
+        finally {
+            await client.DeleteAsync($"api/test-fixtures/failed-report-run/{correlationId}");
+        }
+    }
+
     // Rendered reports are produced by a SERVICE user and can contain rows the caller may not see, so the
     // whole surface is authenticated. The per-artifact ownership check is the second gate.
     [TestMethod]

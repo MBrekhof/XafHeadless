@@ -2,6 +2,7 @@ using DevExpress.ExpressApp;
 using DevExpress.ExpressApp.ReportsV2;   // IReportExportService
 using DevExpress.Persistent.BaseImpl.EF;   // ReportDataV2
 using Hangfire;
+using XafHeadless.Api.Metadata;
 using XafHeadless.JobServer.BusinessObjects;
 using XafHeadless.JobServer.Jobs;
 using Microsoft.AspNetCore.Authorization;
@@ -78,12 +79,13 @@ public class ReportsController(
                 p.Name,
                 string.IsNullOrWhiteSpace(p.Description) ? p.Name : p.Description.TrimEnd(':'),
                 HintFor(p.Type),
-                p.Value?.ToString()))
+                p.Value?.ToString(),
+                ViewMetadataProjector.ProjectEnum(p.Type)))
             .ToList();
         return Ok(parameters);
     }
 
-    public record ReportParameter(string Name, string Caption, string Editor, string? DefaultValue);
+    public record ReportParameter(string Name, string Caption, string Editor, string? DefaultValue, List<EnumValueMetadata>? Enum = null);
 
     // CLR type -> the same editor hints ViewMetadataProjector.ClassifyDataType emits, so the client can
     // render a parameter form with the editors it already has rather than growing a second vocabulary.
@@ -155,7 +157,24 @@ public class ReportsController(
             .CreateNonSecuredObjectSpace(typeof(ReportArtifact));
         var artifact = os.GetObjects<ReportArtifact>()
             .FirstOrDefault(a => a.CorrelationId == correlationId);
-        if (artifact is null) return Accepted();                      // still rendering (or never ran)
+        if (artifact is null) {
+            // BUG-017: if the worker already attempted this correlationId and failed (and no retry is
+            // currently running), stop returning 202 Accepted forever -- surface 422 with the first line
+            // of the recorded error so the client stops polling immediately and displays the failure.
+            var runs = os.GetObjects<JobExecutionRecord>()
+                .Where(r => r.CorrelationId == correlationId)
+                .ToList();
+            if (runs.Count > 0 && runs.All(r => r.Status != JobRunStatus.Running)) {
+                var latest = runs.OrderByDescending(r => r.StartedUtc).First();
+                if (latest.Status == JobRunStatus.Failed) {
+                    var message = latest.ErrorMessage?
+                        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault() ?? "Report rendering failed.";
+                    return UnprocessableEntity(new { error = message });
+                }
+            }
+            return Accepted();                                        // still rendering (or never ran)
+        }
         if (!string.Equals(artifact.RequestedBy, RequesterName, StringComparison.OrdinalIgnoreCase))
             return Forbid();                                          // someone else's render
         return File(artifact.Content, artifact.ContentType, $"{artifact.ReportKey}.pdf");

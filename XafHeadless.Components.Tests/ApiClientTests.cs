@@ -199,4 +199,26 @@ public class ApiClientTests {
             "the body excerpt must be capped");
         StringAssert.Contains(ex.Message, "500");
     }
+
+    // BUG-017: CollectReportAsync previously returned null for BOTH 202 Accepted (still rendering) and
+    // non-2xx errors (422 when the background report job failed, 403 on cross-user access), forcing
+    // ReportsPanel to keep polling for 60s instead of stopping immediately and surfacing the error.
+    [TestMethod]
+    public async Task CollectReportAsync_distinguishes_202_pending_from_422_failed_run_and_surfaces_error() {
+        var runId = Guid.NewGuid();
+        var pendingClient = Client(HttpStatusCode.Accepted, "");
+        var failedClient = Client(HttpStatusCode.UnprocessableEntity,
+            """{"error":"System.FormatException: 'bad-guid' is not a valid Guid."}""");
+
+        var pending = await pendingClient.CollectReportAsync(runId);
+        var failed = await failedClient.CollectReportAsync(runId);
+
+        Assert.IsTrue(pending.Pending);
+        Assert.IsNull(pending.Error);
+        Assert.IsNull(pending.Content);
+
+        Assert.IsFalse(failed.Pending);
+        Assert.AreEqual("System.FormatException: 'bad-guid' is not a valid Guid.", failed.Error);
+        Assert.IsNull(failed.Content);
+    }
 }

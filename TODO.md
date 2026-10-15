@@ -46,11 +46,7 @@ literal compares against a CLR `DateTime`. Both are Api-host changes; measure be
 
 _BUG-016 (scalar save crashes on DateOnly/decimal-to-int/null value types, empty-body Create/Save permission bypass, and ApiClient dropping 409/400/403 error payloads) fixed 2026-10-15 — see `docs/DONE.md`._
 
-#### BUG-017: ReportRenderService.ApplyParameters crashes on Enum/DateOnly parameters, and ReportsController.Collect returns 202 forever when a report job fails (ID: 2188)
-
-Review finding (2026-10-15, unverified — reproduce with tests first):
-- `ReportsController.HintFor` (`ReportsController.cs:93-102`) projects `"enum"` and `"dateonly"` parameter hints, and `ReportsPanel.razor` renders an enum picker, but `ReportRenderService.ApplyParameters` (`ReportRenderService.cs:88-103`) uses `Convert.ChangeType(raw, target, CultureInfo.InvariantCulture)`, which throws `InvalidCastException` for any `Enum` or `DateOnly` parameter type.
-- When a report job fails in Hangfire (e.g., bad parameter or criteria), `JobExecutor` marks `JobExecutionRecord.Status = JobRunStatus.Failed` and writes no `ReportArtifact`. `ReportsController.Collect` (`ReportsController.cs:151-162`) only checks `ReportArtifact` and returns `202 Accepted` when none exists, causing `ReportsPanel.razor` to poll for the full 60 seconds and report a timeout instead of surfacing the failure from `JobExecutionRecord`.
+_BUG-017 (`ReportRenderService.ApplyParameters` Enum/DateOnly conversion, enum parameter metadata projection, and `ReportsController.Collect` / `ApiClient.CollectReportAsync` surfacing failed report runs instead of polling 202 forever) fixed 2026-10-15 — see `docs/DONE.md`._
 
 #### BUG-018: Unescaped/unquoted keys in DetailBinding.KeyFilter and GridBinding.BuildMasterFilter break string keys and allow OData $filter injection (ID: 2189)
 

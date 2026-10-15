@@ -144,25 +144,51 @@ public class ApiClient(HttpClient http, AuthState authState, ILogger<ApiClient> 
         return accepted?.CorrelationId;
     }
 
-    // Collect a finished render. Null means NOT READY YET (the API answers 202 while the job is still
-    // running), which is an ordinary state the caller polls on -- distinct from a failure, which is
-    // logged. Returns the PDF bytes and its content type once the job has committed.
-    public async Task<(byte[] Content, string ContentType, string FileName)?> CollectReportAsync(Guid correlationId) {
+    // Collect a finished render. Pending=true on 202 (the API answers 202 while the job is still running),
+    // which is an ordinary state the caller polls on. BUG-017: a terminal failure (422 when the worker
+    // recorded JobRunStatus.Failed, 403 on cross-user access, or 5xx) returns Pending=false with Error
+    // populated from the response body so ReportsPanel stops polling immediately instead of waiting 60s.
+    public async Task<ReportCollectOutcome> CollectReportAsync(Guid correlationId) {
         ApplyAuthHeader();
         var response = await http.GetAsync($"api/reports/runs/{correlationId}");
-        if (CheckUnauthorized(response)) return null;
-        if (response.StatusCode == HttpStatusCode.Accepted) return null;      // still rendering
+        if (CheckUnauthorized(response))
+            return new ReportCollectOutcome(Pending: false, Error: "Unauthorized.");
+        if (response.StatusCode == HttpStatusCode.Accepted)
+            return new ReportCollectOutcome(Pending: true);               // still rendering
         if (!response.IsSuccessStatusCode) {
             LogDegraded(response, $"report run '{correlationId}' could not be collected");
-            return null;
+            var errorBody = await response.Content.ReadAsStringAsync();
+            string? serverError = null;
+            if (!string.IsNullOrWhiteSpace(errorBody)) {
+                try {
+                    using var doc = JsonDocument.Parse(errorBody);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                        doc.RootElement.TryGetProperty("error", out var errProp) &&
+                        errProp.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(errProp.GetString())) {
+                        serverError = errProp.GetString();
+                    }
+                } catch (JsonException) {
+                    // Fallback below if body is not valid JSON.
+                }
+            }
+            return new ReportCollectOutcome(Pending: false,
+                Error: serverError ?? $"Report run failed ({(int)response.StatusCode}).");
         }
         var bytes = await response.Content.ReadAsByteArrayAsync();
         var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
         var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
                        ?? response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
                        ?? "report.pdf";
-        return (bytes, contentType, fileName);
+        return new ReportCollectOutcome(Pending: false, Content: bytes, ContentType: contentType, FileName: fileName);
     }
+
+    public record ReportCollectOutcome(
+        bool Pending,
+        byte[]? Content = null,
+        string? ContentType = null,
+        string? FileName = null,
+        string? Error = null);
 
     public record RunAccepted(Guid CorrelationId);
 

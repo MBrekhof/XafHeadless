@@ -374,8 +374,10 @@ public class ViewMetadataProjector {
         return attribute?.Alias;
     }
 
-    static List<EnumValueMetadata>? ProjectEnum(IMemberInfo mi) {
-        var t = Nullable.GetUnderlyingType(mi.MemberType) ?? mi.MemberType;
+    static List<EnumValueMetadata>? ProjectEnum(IMemberInfo mi) => ProjectEnum(mi.MemberType);
+
+    internal static List<EnumValueMetadata>? ProjectEnum(Type type) {
+        var t = Nullable.GetUnderlyingType(type) ?? type;
         if (!t.IsEnum) return null;
         var descriptor = new EnumDescriptor(t);
         return Enum.GetValues(t).Cast<object>()

@@ -1,5 +1,13 @@
 # XafHeadless — DONE
 
+#### BUG-017: ReportRenderService.ApplyParameters Enum/DateOnly conversion and surfacing failed report runs in Collect (ID: 2188)
+
+**Done 2026-10-15.** Fixed the report parameter conversion crash and the infinite `202 Accepted` poll on failed report runs:
+- **Worker `ReportRenderService.ApplyParameters`:** Added `ConvertParameterValue(string raw, Type target)` handling `Enum` (via `Enum.TryParse(..., ignoreCase: true)` plus `Enum.IsDefined` guard for non-`[Flags]` enums) and `DateOnly` (both `"yyyy-MM-dd"` and ISO `DateTime` strings) before falling back to `Convert.ChangeType`.
+- **Parameter metadata & client serialization:** `ReportsController.Parameters` now includes `Enum: ViewMetadataProjector.ProjectEnum(p.Type)` on `ReportParameter`, `ReportsPanel.BuildParameterForm` passes `Enum: p.Enum` into the synthetic `LayoutNode` so `EnumEditor` has option metadata, and `ReportsPanel.Format` formats `DateOnly` values as `"yyyy-MM-dd"`.
+- **Failed run collection (`ReportsController.Collect` & `ApiClient.CollectReportAsync`):** When no `ReportArtifact` exists for `correlationId`, `ReportsController.Collect` checks `JobExecutionRecord` in the same host `IObjectSpace`; if any run exists, none is `Running`, and the latest run has `Status == JobRunStatus.Failed`, it returns `422 UnprocessableEntity` with `{ error = firstLine }`. `ApiClient.CollectReportAsync` now returns `ReportCollectOutcome(bool Pending, byte[]? Content, string? ContentType, string? FileName, string? Error)` and `ReportsPanel.Run` stops polling immediately when `!result.Pending`, surfacing `result.Error`.
+- **Tests:** 3 new tests in `XafHeadless.JobServer.Tests\ReportParameterTests.cs`, 1 new test in `XafHeadless.Components.Tests\ApiClientTests.cs` (117/117 green), and 1 new test in `XafHeadless.Api.Tests\ReportsTests.cs` (91/91 green).
+
 #### BUG-016: Scalar save hardening, Create/empty-body Save permission gates, and ApiClient 409/400/403 error extraction (ID: 2187)
 
 **Done 2026-10-15.** Fixed the four save/error-handling gaps identified in the 2026-10-15 repo review, plus aligned the solution's DevExpress NuGet pins (`26.1.4` → `26.1.5`) with the installed demo module:
